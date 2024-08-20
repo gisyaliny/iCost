@@ -1,0 +1,2 @@
+# iCost
+Opensource Django Project
