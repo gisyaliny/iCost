@@ -12,10 +12,11 @@ ENV npm_config_ignore_optional=false
 RUN npm ci
 
 # 针对 Tailwind 4 / lightningcss 的核心修复：显式安装对应的平台二进制包
-RUN npm install --save-optional lightningcss-linux-x64-gnu
+RUN npm install --save-optional lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu
 
 # 验证二进制是否存在（调试用，如果不存在会在此停止并报错）
-RUN ls -la node_modules/lightningcss-linux-x64-gnu/*.node || (echo "Binary not found!" && exit 1)
+RUN ls -la node_modules/lightningcss-linux-x64-gnu/*.node || (echo "LightningCSS binary not found!" && exit 1)
+RUN ls -la node_modules/@tailwindcss/oxide-linux-x64-gnu/*.node || (echo "Tailwind Oxide binary not found!" && exit 1)
 
 FROM base AS builder
 WORKDIR /app
