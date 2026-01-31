@@ -27,7 +27,8 @@ export async function registerUser(formData: FormData) {
 
         return { success: true }
     } catch (e) {
-        return { error: "Registration failed" }
+        console.error("Registration Error:", e)
+        return { error: "Registration failed. Check server logs." }
     }
 }
 

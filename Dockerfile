@@ -25,6 +25,8 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+RUN chmod +x docker-bootstrap.sh
+
 # Ensure public directory exists even if empty in source
 RUN mkdir -p public
 
@@ -43,8 +45,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+COPY --from=builder /app/docker-bootstrap.sh ./docker-bootstrap.sh
+
 USER nextjs
 EXPOSE 3000
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
-CMD ["node","server.js"]
+
+# 使用 bootstrap 脚本启动，确保数据库已初始化
+CMD ["sh", "./docker-bootstrap.sh"]

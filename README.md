@@ -89,12 +89,12 @@ Before clicking Install, ensure you customize these key fields:
 Ensure the volume mapping is correct:
 - **Host Path**: `/DATA/AppData/icost/database`
 - **Container Path**: `/app/database`
-- *This ensures your data is saved even if you update or delete the container.*
+- *Note: iCost now automatically initializes the database schema on startup.*
 
 ### Step 5: Finalize and Access
 1. Click **Install**. CasaOS will pull the image and start the container.
 2. Once the icon appears on your dashboard, click it to open iCost.
-3. **First Run**: Log in with the default credentials (if configured) or register your first account.
+3. **Register**: The first visitor should register their account. Subsequent family members can also register to have their own profiles.
 
 > 💡 **Pro Tip**: If you are using a reverse proxy (like Nginx Proxy Manager), set `NEXTAUTH_URL` to your domain (e.g., `https://icost.yourdomain.com`). iCost will automatically handle the redirection.
 
@@ -145,6 +145,26 @@ Ensure the volume mapping is correct:
 - **`NEXTAUTH_SECRET`**: CRITICAL. Change this to a long random string.
 - **Database Backup**: Simply back up the `/app/database/db.sqlite` file. In CasaOS, this is located at `/DATA/AppData/icost/database/db.sqlite`.
 - **Private Instance**: This app is designed for internal network use. If exposing to the internet, please use a reverse proxy with SSL (like Nginx Proxy Manager).
+
+---
+
+## 🛠 Troubleshooting
+
+### "Registration Failed" on new installation
+If you see "Registration failed" when creating your first account, it is almost always a **filesystem permission** issue:
+1. The Docker container runs as a non-root user (`nextjs`, UID 1001) for security.
+2. Your host folder (e.g., `/DATA/AppData/icost/database`) must be writable by this user.
+3. **Fix**: Run this command on your CasaOS server terminal:
+   ```bash
+   sudo chown -R 1001:1001 /DATA/AppData/icost/database
+   ```
+4. Restart the container.
+
+### Check Logs
+To see the exact error, check the container logs in CasaOS:
+- Click the app settings (three dots) -> **Settings** -> **Logs**.
+- Look for lines starting with `Registration Error:`.
+
 
 ## 📄 License
 
