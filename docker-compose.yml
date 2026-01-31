@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  icost:
+    build: .
+    image: icost-app:latest
+    container_name: icost-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:/app/database/db.sqlite
+      - NEXTAUTH_SECRET=changeme_to_something_secure_random
+      - NEXTAUTH_URL=http://localhost:3000
+    volumes:
+      - ./database:/app/database
