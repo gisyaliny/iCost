@@ -41,37 +41,62 @@ iCost is a powerful, self-hosted family expense tracking application designed fo
 
 ---
 
-## 🚀 Installation on CasaOS
+## 🚀 Comprehensive Installation on CasaOS
 
-iCost is optimized for CasaOS. Follow these steps to get it running in minutes:
+iCost is optimized for **CasaOS** and other home server environments. Follow this detailed guide to set up your personal finance tracker.
 
-### Method 1: App Store (Coming Soon)
-- Search for **iCost** in the CasaOS App Store and click Install.
+### Prerequisites
+- A running instance of **CasaOS**.
+- External access configured (optional, if you want to access iCost outside your home).
 
-### Method 2: Manual Installation (Docker Compose)
-1. Open your CasaOS Dashboard.
-2. Click **App Store** > **Custom Install** > **Import**.
-3. Paste the following configuration:
+### Step 1: Open Custom Install
+1. log in to your **CasaOS Dashboard**.
+2. Click the **App Store** icon.
+3. In the top-right corner, click **Custom Install**.
+
+### Step 2: Import Docker Compose
+1. Click the **Import** button in the top-right of the Install window.
+2. Copy and paste the following configuration:
 
 ```yaml
-version: '3'
+version: '3.9'
 services:
   icost:
     image: gisyaliny/icost:latest
     container_name: icost-app
     restart: unless-stopped
+    network_mode: bridge
     ports:
       - "3001:3000"
     environment:
       - DATABASE_URL=file:/app/database/db.sqlite
-      - NEXTAUTH_SECRET=YOUR_SECURE_RANDOM_SECRET
+      - NEXTAUTH_SECRET=generate_a_random_string_here
       - NEXTAUTH_URL=http://YOUR_SERVER_IP:3001
     volumes:
       - /DATA/AppData/icost/database:/app/database
 ```
 
-4. Click **Install**.
-5. Once the container is running, access it at `http://your-server-ip:3001`.
+### Step 3: Configure Environment Variables
+Before clicking Install, ensure you customize these key fields:
+
+| Variable | Description | Recommendation |
+| :--- | :--- | :--- |
+| **NEXTAUTH_SECRET** | Used to encrypt your session cookies. | Replace with a long random string (e.g., `openssl rand -base64 32`). |
+| **NEXTAUTH_URL** | The public URL of your app. | Use `http://<YOUR_CASAOS_IP>:3001`. |
+| **Port** | The port used to access the app. | Default is `3001`. Change if it conflicts with another app. |
+
+### Step 4: Set Persistent Storage
+Ensure the volume mapping is correct:
+- **Host Path**: `/DATA/AppData/icost/database`
+- **Container Path**: `/app/database`
+- *This ensures your data is saved even if you update or delete the container.*
+
+### Step 5: Finalize and Access
+1. Click **Install**. CasaOS will pull the image and start the container.
+2. Once the icon appears on your dashboard, click it to open iCost.
+3. **First Run**: Log in with the default credentials (if configured) or register your first account.
+
+> 💡 **Pro Tip**: If you are using a reverse proxy (like Nginx Proxy Manager), set `NEXTAUTH_URL` to your domain (e.g., `https://icost.yourdomain.com`). iCost will automatically handle the redirection.
 
 ---
 

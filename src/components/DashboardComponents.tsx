@@ -1477,7 +1477,7 @@ export function UserSettings({ session, categories, properties }: { session: any
                          </div>
                     </div>
                     <div className="p-4 pt-2">
-                        <Button variant="ghost" onClick={() => signOut()} className="w-full justify-start text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-3">
+                        <Button variant="ghost" onClick={() => signOut({ callbackUrl: window.location.origin })} className="w-full justify-start text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl gap-3">
                             <span>🔓</span> Sign Out
                         </Button>
                     </div>
