@@ -24,6 +24,9 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Ensure public directory exists even if empty in source
+RUN mkdir -p public
+
 RUN npx prisma generate
 RUN npm run build
 
@@ -36,8 +39,6 @@ RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid 1001 nextjs
 
 COPY --from=builder /app/public ./public
-RUN mkdir .next && chown nextjs:nodejs .next
-
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
