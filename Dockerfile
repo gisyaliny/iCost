@@ -1,4 +1,5 @@
 FROM node:20-bookworm-slim AS base
+RUN apt-get update && apt-get install -y openssl libc6 && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 WORKDIR /app
@@ -37,15 +38,23 @@ FROM node:20-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
 
 RUN groupadd --system --gid 1001 nodejs \
-    && useradd --system --uid 1001 --gid 1001 nextjs
+    && useradd --system --uid 1001 --gid 1001 -m nextjs \
+    && chown -R nextjs:nodejs /home/nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 COPY --from=builder /app/docker-bootstrap.sh ./docker-bootstrap.sh
+
+# Copy Prisma schema and engine for runtime DB initialization
+COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
 
 USER nextjs
 EXPOSE 3000
