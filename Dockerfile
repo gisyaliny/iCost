@@ -11,12 +11,11 @@ ENV npm_config_ignore_optional=false
 
 RUN npm ci
 
-# 关键：显式安装 lightningcss 的 platform binary（gnu）
-# 这一步能兜底 npm ci 没拉到二进制的情况
-RUN npm i -D @tailwindcss/node lightningcss \
- && node -e "console.log('node', process.version, process.platform, process.arch)" \
- && ls -la node_modules/lightningcss || true \
- && ls -la node_modules/lightningcss/node || true
+# 针对 Tailwind 4 / lightningcss 的核心修复：显式安装对应的平台二进制包
+RUN npm install --save-optional lightningcss-linux-x64-gnu
+
+# 验证二进制是否存在（调试用，如果不存在会在此停止并报错）
+RUN ls -la node_modules/lightningcss-linux-x64-gnu/*.node || (echo "Binary not found!" && exit 1)
 
 FROM base AS builder
 WORKDIR /app
@@ -24,10 +23,6 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# 构建前再验证一次 binary 是否存在
-RUN test -f node_modules/lightningcss/lightningcss.linux-x64-gnu.node \
- || (echo 'missing lightningcss binary' && ls -la node_modules/lightningcss && exit 1)
 
 RUN npm run build
 
@@ -37,7 +32,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN groupadd --system --gid 1001 nodejs \
- && useradd --system --uid 1001 --gid 1001 nextjs
+    && useradd --system --uid 1001 --gid 1001 nextjs
 
 COPY --from=builder /app/public ./public
 RUN mkdir .next && chown nextjs:nodejs .next
