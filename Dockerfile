@@ -25,6 +25,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
+ENV PRISMA_CLIENT_ENGINE_TYPE=library
 
 RUN chmod +x docker-bootstrap.sh
 
@@ -38,6 +40,8 @@ FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
+ENV PRISMA_CLIENT_ENGINE_TYPE=library
 
 # Ensure the database directory exists and is owned by the app user
 # This is where the SQLite database will be stored
