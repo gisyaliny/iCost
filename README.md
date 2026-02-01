@@ -94,7 +94,10 @@ Ensure the volume mapping is correct:
 ### Step 5: Finalize and Access
 1. Click **Install**. CasaOS will pull the image and start the container.
 2. Once the icon appears on your dashboard, click it to open iCost.
-3. **Register**: The first visitor should register their account. Subsequent family members can also register to have their own profiles.
+3. **Access**: You can register your own account or use the default pre-configured account:
+   - **Username**: `admin`
+   - **Password**: `admin123`
+   - *It is highly recommended to change the password or create a new user and delete the admin account after login.*
 
 > 💡 **Pro Tip**: If you are using a reverse proxy (like Nginx Proxy Manager), set `NEXTAUTH_URL` to your domain (e.g., `https://icost.yourdomain.com`). iCost will automatically handle the redirection.
 
