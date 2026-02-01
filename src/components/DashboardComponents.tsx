@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import { Progress } from "@/components/ui/progress"
+import { CategorySelectorContent } from "./CategorySelectorContent"
 
 
 export function SummaryCards({ transactions }: { transactions: any[] }) {
@@ -381,38 +382,13 @@ export function TransactionList({
                                     <span className="text-slate-400">▼</span>
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-[320px] p-4 rounded-3xl shadow-2xl border-0" align="end">
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by category</span>
-                                        <Button variant="ghost" size="sm" onClick={toggleAllCategories} className="h-7 text-[10px] font-bold text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 px-2 rounded-lg">
-                                            {selectedCategories.size === categories.length ? "UNSELECT ALL" : "SELECT ALL"}
-                                        </Button>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2 max-h-[400px] overflow-y-auto pr-1 pt-1">
-                                        {categories.map((c: any) => (
-                                            <div 
-                                                key={c.id} 
-                                                className={cn(
-                                                    "relative flex flex-col items-center justify-center p-3 rounded-2xl cursor-pointer transition-all border-2",
-                                                    selectedCategories.has(c.id) 
-                                                        ? "bg-indigo-50 border-indigo-200" 
-                                                        : "bg-slate-50 border-transparent grayscale opacity-60 hover:grayscale-0 hover:opacity-100 hover:border-slate-200"
-                                                )}
-                                                onClick={() => toggleCategory(c.id)}
-                                            >
-                                                <Checkbox 
-                                                    checked={selectedCategories.has(c.id)} 
-                                                    onCheckedChange={() => toggleCategory(c.id)} 
-                                                    id={`list-cat-${c.id}`} 
-                                                    className="absolute top-2 right-2 w-4 h-4 rounded-md border-slate-300" 
-                                                />
-                                                <span className="text-2xl mb-1">{c.icon}</span>
-                                                <span className="text-[10px] font-bold text-slate-700 text-center truncate w-full">{c.name}</span>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
+                            <PopoverContent className="w-[340px] p-4 rounded-3xl shadow-2xl border-0" align="end">
+                                <CategorySelectorContent 
+                                    categories={categories} 
+                                    selectedCategories={selectedCategories} 
+                                    toggleCategory={toggleCategory} 
+                                    toggleAllCategories={toggleAllCategories} 
+                                />
                             </PopoverContent>
                         </Popover>
                     </div>
