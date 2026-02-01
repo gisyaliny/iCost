@@ -6,7 +6,6 @@ echo "🚀 Starting iCost Bootstrap Process..."
 echo "🔍 System Environment:"
 echo "User: $(whoami) (UID: $(id -u))"
 echo "OpenSSL Version: $(openssl version)"
-ls -l /usr/lib/x86_64-linux-gnu/libssl.so* || echo "libssl not found in standard path"
 
 # 2. Check/Fix Database Permissions
 DB_DIR="/app/database"
@@ -16,16 +15,24 @@ if [ ! -d "$DB_DIR" ]; then
     mkdir -p "$DB_DIR"
 fi
 
-# Ensure the directory is writable
-# Note: Since the container runs as 'nextjs', it must own this folder
-if [ ! -w "$DB_DIR" ]; then
-    echo "⚠️ WARNING: $DB_DIR is NOT writable by current user."
-fi
+# 3. Locate Prisma CLI
+# Since we are in a slim environment, .bin symlinks might strictly not exist.
+# We look for the package directly.
+PRISMA_CLI="./node_modules/prisma/build/index.js"
 
-# 3. Initialize Database Tables
-# We use the local binary to avoid npx trying to download/install things to /home/nextjs
-echo "🏗️ Running Prisma DB Push..."
-./node_modules/.bin/prisma db push --accept-data-loss
+if [ ! -f "$PRISMA_CLI" ]; then
+    echo "⚠️ Prisma CLI not found at $PRISMA_CLI"
+    echo "Listing node_modules/prisma..."
+    ls -R node_modules/prisma || echo "node_modules/prisma not found"
+    
+    # Fallback to npx (might try to download if cached version missing)
+    echo "Trying npx..."
+    npx prisma db push --accept-data-loss
+else
+    echo "Found Prisma CLI at $PRISMA_CLI"
+    echo "🏗️ Running Prisma DB Push..."
+    node "$PRISMA_CLI" db push --accept-data-loss
+fi
 
 if [ $? -eq 0 ]; then
     echo "✅ Database schema sync successful."
