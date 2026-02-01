@@ -1,5 +1,5 @@
-FROM node:20-bookworm-slim AS base
-RUN apt-get update && apt-get install -y openssl libc6 && rm -rf /var/lib/apt/lists/*
+FROM node:20-bookworm AS base
+RUN apt-get update && apt-get install -y openssl libssl3 ca-certificates libc6 && rm -rf /var/lib/apt/lists/*
 
 FROM base AS deps
 WORKDIR /app
@@ -34,11 +34,11 @@ RUN mkdir -p public
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-bookworm-slim AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x
+ENV PRISMA_CLIENT_ENGINE_TYPE=library
 
 RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid 1001 -m nextjs \

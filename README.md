@@ -151,14 +151,20 @@ Ensure the volume mapping is correct:
 ## 🛠 Troubleshooting
 
 ### "Registration Failed" on new installation
-If you see "Registration failed" when creating your first account, it is almost always a **filesystem permission** issue:
-1. The Docker container runs as a non-root user (`nextjs`, UID 1001) for security.
-2. Your host folder (e.g., `/DATA/AppData/icost/database`) must be writable by this user.
-3. **Fix**: Run this command on your CasaOS server terminal:
+If you see "Registration failed" when creating your first account, it is almost always a **filesystem permission** issue or a **cached Docker engine** issue:
+
+1. **Clean Rebuild**: Sometimes Docker caches an old Prisma engine. Run a clean build:
+   ```bash
+   sudo docker compose down
+   sudo docker compose build --no-cache
+   sudo docker compose up -d
+   ```
+
+2. **Fix Permissions**: The Docker container runs as a non-root user (`nextjs`, UID 1001). Your host folder must be writable by this user:
    ```bash
    sudo chown -R 1001:1001 /DATA/AppData/icost/database
    ```
-4. Restart the container.
+
 
 ### Check Logs
 To see the exact error, check the container logs in CasaOS:
