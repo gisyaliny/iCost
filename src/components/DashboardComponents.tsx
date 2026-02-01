@@ -281,12 +281,54 @@ export function TransactionList({
         toast.success("CSV Exported")
     }
 
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
+
+    const sortedTransactions = useMemo(() => {
+        let sortableItems = [...filtered]
+        if (sortConfig !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key]
+                let bValue = b[sortConfig.key]
+
+                // Handle special cases
+                if (sortConfig.key === 'category') {
+                    aValue = a.category?.name || ""
+                    bValue = b.category?.name || ""
+                }
+                if (sortConfig.key === 'amount') {
+                    // Normalize amount for sorting (income positive, expense negative)
+                    aValue = a.type === 'INCOME' ? a.amount : -a.amount
+                    bValue = b.type === 'INCOME' ? b.amount : -b.amount
+                }
+
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1
+                }
+                return 0
+            })
+        }
+        return sortableItems
+    }, [filtered, sortConfig])
+
+    function handleSort(key: string) {
+        let direction: 'asc' | 'desc' = 'asc'
+        if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc'
+        }
+        setSortConfig({ key, direction })
+    }
+
     // 4. Paginate
-    const totalPages = Math.ceil(filtered.length / pageSize)
-    const paginatedTransactions = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    const totalPages = Math.ceil(sortedTransactions.length / pageSize)
+    const paginatedTransactions = sortedTransactions.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <Card className="shadow-xl border-0 overflow-hidden animate-slide-up">
+        {/* ... (Header content skipped for brevity, keeping existing structure) ... */}
         <CardHeader className="bg-slate-50/50 p-6">
             <div className="flex flex-col gap-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -384,10 +426,50 @@ export function TransactionList({
               <TableHead className="w-10">
                   <Checkbox checked={selectedIds.size === paginatedTransactions.length && paginatedTransactions.length > 0} onCheckedChange={toggleSelectAll} />
               </TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
+              <TableHead 
+                  className="cursor-pointer hover:bg-slate-50 transition-colors group" 
+                  onClick={() => handleSort('date')}
+              >
+                  <div className="flex items-center gap-1">
+                      Date
+                      {sortConfig?.key === 'date' && (
+                          <span className="text-xs text-indigo-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                  </div>
+              </TableHead>
+              <TableHead 
+                  className="cursor-pointer hover:bg-slate-50 transition-colors group"
+                  onClick={() => handleSort('description')}
+              >
+                  <div className="flex items-center gap-1">
+                       Description
+                       {sortConfig?.key === 'description' && (
+                          <span className="text-xs text-indigo-500">{sortConfig.direction === 'asc' ? 'A-Z' : 'Z-A'}</span>
+                      )}
+                  </div>
+              </TableHead>
+              <TableHead 
+                  className="cursor-pointer hover:bg-slate-50 transition-colors group"
+                  onClick={() => handleSort('category')}
+              >
+                  <div className="flex items-center gap-1">
+                       Category
+                       {sortConfig?.key === 'category' && (
+                          <span className="text-xs text-indigo-500">{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
+                      )}
+                  </div>
+              </TableHead>
+              <TableHead 
+                  className="text-right cursor-pointer hover:bg-slate-50 transition-colors group"
+                  onClick={() => handleSort('amount')}
+              >
+                  <div className="flex items-center justify-end gap-1">
+                       Amount
+                       {sortConfig?.key === 'amount' && (
+                          <span className="text-xs text-indigo-500">{sortConfig.direction === 'asc' ? 'LOW' : 'HIGH'}</span>
+                      )}
+                  </div>
+              </TableHead>
               <TableHead className="w-10 text-right"></TableHead>
               <TableHead className="w-10"></TableHead>
             </TableRow>
@@ -1056,52 +1138,75 @@ export function CSVImport({ existingTransactions }: { existingTransactions: any[
                 skipEmptyLines: true,
                 complete: (results) => {
                     const parsed = results.data.map((row: any) => {
-                        // Dynamic key matching for common banking CSVs
-                        const findKey = (candidates: string[]) => {
-                            return Object.keys(row).find(k => candidates.includes(k)) || "";
+                        // Normalize keys for case-insensitive and trimmed matching
+                        const normalizedRow: Record<string, string> = {};
+                        Object.keys(row).forEach(k => {
+                            normalizedRow[k.trim().toLowerCase()] = row[k];
+                        });
+
+                        const findVal = (candidates: string[]) => {
+                            const foundKey = Object.keys(normalizedRow).find(k => candidates.includes(k));
+                            return foundKey ? normalizedRow[foundKey] : "";
                         }
                         
-                        const dateKey = findKey(['Posting Date', 'Transaction Date', 'Date', 'Date (UTC)', 'trans_date']);
-                        const descKey = findKey(['Description', 'Descriptio', 'Memo', 'trans_desc', 'Payee']); // Prioritize descriptive headers
-                        const amountKey = findKey(['Amount', 'Value', 'Amount (USD)', 'trans_amount']);
+                        // Lowercase candidates for matching
+                        const dateVal = findVal(['posting date', 'transaction date', 'date', 'date (utc)', 'trans_date']);
+                        const descVal = findVal(['transaction description', 'description', 'descriptio', 'memo', 'trans_desc', 'payee', 'details']); 
+                        const amountVal = findVal(['amount', 'value', 'amount (usd)', 'trans_amount']);
                         
-                        const dateRaw = row[dateKey] || new Date().toISOString();
-                        const descBase = row[descKey] || row['Details'] || 'Imported Transaction'; // Fallback to Details if others missing
-                        const rawAmount = parseFloat(row[amountKey] || '0');
+                        const dateRaw = dateVal || new Date().toISOString();
+                        const descBase = descVal || 'Imported Transaction'; 
+                        
+                        // Robust Amount Parsing
+                        let amountStr = (amountVal || '0').toString().trim();
+                        let isNegative = false;
+                        
+                        // Detect accounting negative format ($100.00) or (100.00)
+                        if (amountStr.startsWith('(') && amountStr.endsWith(')')) {
+                            isNegative = true;
+                        }
+                        // Detect logic negative signs
+                        if (amountStr.includes('-')) {
+                            isNegative = true;
+                        }
+
+                        // Remove all non-numeric characters except dot and minus (though we handle minus manually)
+                        // This removes $, ,, (, )
+                        const cleanAmountStr = amountStr.replace(/[^0-9.]/g, '');
+                        
+                        let rawAmount = parseFloat(cleanAmountStr);
+                        if (isNaN(rawAmount)) rawAmount = 0;
+                        if (isNegative) rawAmount = -Math.abs(rawAmount);
+
                         const amount = Math.abs(rawAmount);
                         
-                        // Clean description: avoid just using "DEBIT" or "CREDIT"
+                        // Clean description
                         let desc = descBase;
-                        if (['DEBIT', 'CREDIT'].includes(descBase.toUpperCase()) && row['Description']) {
-                             desc = row['Description'];
+                        // Avoid generic bank descriptions if possible
+                        if (['DEBIT', 'CREDIT', 'ACH DEBIT', 'ACH CREDIT'].some(s => descBase.toUpperCase().includes(s)) && normalizedRow['description']) {
+                             const altDesc = normalizedRow['description'];
+                             if (altDesc && altDesc.length > desc.length) desc = altDesc;
                         }
                         
-                        // Type detection based on Amount or specific Type/Details column
-                        const typeCol = (row['Details'] || row['Type'] || "").toUpperCase();
-                        let type = rawAmount >= 0 ? "INCOME" : "EXPENSE"; // Default PNC/Bank style
-                        if (typeCol.includes('DEBIT')) type = "EXPENSE";
-                        if (typeCol.includes('CREDIT')) type = "INCOME";
+                        // Type detection
+                        const typeVal = (normalizedRow['details'] || normalizedRow['type'] || "").toUpperCase();
+                        let type = rawAmount >= 0 ? "INCOME" : "EXPENSE";
                         
-                        // Date parsing robustness
-                        let date = dateRaw;
-                        try {
-                            const d = new Date(dateRaw);
-                            if (!isNaN(d.getTime())) {
-                                date = d.toISOString();
-                            }
-                        } catch (e) {
-                            console.error("Date parse error for:", dateRaw, e);
-                        }
-                        
-                        // Check for potential duplicate in existing transactions
+                        // Override type if explicit keywords found
+                        if (typeVal.includes('DEBIT')) type = "EXPENSE";
+                        if (typeVal.includes('CREDIT')) type = "INCOME";
+                        // If amount is negative, it's an expense (accounting standard usually)
+                        if (rawAmount < 0) type = "EXPENSE";
+
+                        // Check for potential duplicate
                         const isDuplicate = existingTransactions.some(et => 
-                            new Date(et.date).toISOString().split('T')[0] === new Date(date).toISOString().split('T')[0] &&
+                            new Date(et.date).toISOString().split('T')[0] === new Date(dateRaw).toISOString().split('T')[0] &&
                             et.amount === amount &&
                             et.description === desc &&
                             et.type === type
                         )
 
-                        return { date, description: desc, amount, type, isDuplicate }
+                        return { date: dateRaw, description: desc, amount, type, isDuplicate }
                     }).filter(t => t.amount !== 0)
                     setPreviewData(parsed)
                 }
