@@ -36,3 +36,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local secrets and SQLite data
+.env
+.env.*
+!.env.example
+!.env.nas.example
+/prisma/*.db
+/prisma/*.db-journal
+/prisma/*.db-shm
+/prisma/*.db-wal
+/prisma/backups/
+/database/
+/imports/
+
+# Generated Prisma client / native engines
+/src/generated/

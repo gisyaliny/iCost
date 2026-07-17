@@ -3,3 +3,10 @@ node_modules
 npm-debug.log
 Dockerfile*
 docker-compose*.yml
+.env
+.env.*
+prisma/*.db
+prisma/*.db-*
+prisma/backups
+database
+src/generated

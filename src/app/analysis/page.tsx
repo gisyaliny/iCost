@@ -2,22 +2,34 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { AnalysisCharts, SummaryCards } from "@/components/DashboardComponents"
+import { AnalysisCharts } from "@/components/DashboardComponents"
+import { projectView, settingsView, transactionView } from "@/lib/finance-view"
 
 export default async function AnalysisPage() {
   const session = await getServerSession(authOptions)
   if (!session) redirect("/login")
 
-  const transactions = await prisma.transaction.findMany({
+  const transactionRows = await prisma.transaction.findMany({
     where: { userId: session.user.id },
-    include: { category: true, property: true },
+    include: { category: true, property: true, project: true, account: true },
     orderBy: { date: 'desc' }
   })
   
   const categories = await prisma.category.findMany()
   const properties = await prisma.property.findMany({
-      where: { userId: session.user.id }
+      where: { userId: session.user.id, isArchived: false }
   })
+  const transactions = transactionRows.map(transactionView)
+  const projectRows = await prisma.project.findMany({
+      where: { userId: session.user.id, isArchived: false },
+      orderBy: { createdAt: 'desc' }
+  })
+  const projects = projectRows.map(projectView)
+  const userSettingsRow = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { monthlyBudgetCents: true, currency: true, locale: true, timezone: true }
+  })
+  const userSettings = userSettingsRow ? settingsView(userSettingsRow) : null
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-20 mt-8 px-4">
@@ -26,8 +38,7 @@ export default async function AnalysisPage() {
            <p className="text-slate-500 mt-1">Visualize your expenses and income trends.</p>
       </div>
       
-      <SummaryCards transactions={transactions} />
-      <AnalysisCharts transactions={transactions} categories={categories} properties={properties} />
+      <AnalysisCharts transactions={transactions} categories={categories} properties={properties} projects={projects} settings={userSettings} />
     </div>
   )
 }

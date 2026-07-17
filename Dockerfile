@@ -12,12 +12,16 @@ ENV npm_config_ignore_optional=false
 
 RUN npm ci
 
-# 针对 Tailwind 4 / lightningcss 的核心修复：显式安装对应的平台二进制包
-RUN npm install --save-optional lightningcss-linux-x64-gnu @tailwindcss/oxide-linux-x64-gnu
-
-# 验证二进制是否存在（调试用，如果不存在会在此停止并报错）
-RUN ls -la node_modules/lightningcss-linux-x64-gnu/*.node || (echo "LightningCSS binary not found!" && exit 1)
-RUN ls -la node_modules/@tailwindcss/oxide-linux-x64-gnu/*.node || (echo "Tailwind Oxide binary not found!" && exit 1)
+# Ensure Tailwind/LightningCSS native packages match the NAS CPU architecture.
+RUN arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64) css_arch="x64" ;; \
+      arm64) css_arch="arm64" ;; \
+      *) echo "Unsupported Docker architecture: $arch"; exit 1 ;; \
+    esac; \
+    npm install --no-save "lightningcss-linux-${css_arch}-gnu" "@tailwindcss/oxide-linux-${css_arch}-gnu"; \
+    test -n "$(find "node_modules/lightningcss-linux-${css_arch}-gnu" -name '*.node' -print -quit)"; \
+    test -n "$(find "node_modules/@tailwindcss/oxide-linux-${css_arch}-gnu" -name '*.node' -print -quit)"
 
 FROM base AS builder
 WORKDIR /app
@@ -45,18 +49,20 @@ ENV PRISMA_CLIENT_ENGINE_TYPE=library
 
 # Ensure the database directory exists and is owned by the app user
 # This is where the SQLite database will be stored
-RUN mkdir -p /app/database
+RUN mkdir -p /app/database /app/imports
 
 RUN groupadd --system --gid 1001 nodejs \
     && useradd --system --uid 1001 --gid 1001 -m nextjs \
     && chown -R nextjs:nodejs /home/nextjs \
-    && chown -R nextjs:nodejs /app/database
+    && chown -R nextjs:nodejs /app/database \
+    && chown -R nextjs:nodejs /app/imports
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 COPY --from=builder --chown=nextjs:nodejs /app/docker-bootstrap.sh ./docker-bootstrap.sh
+COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 # Copy Prisma schema and engines for runtime DB initialization
 COPY --from=builder /app/prisma ./prisma

@@ -1,10 +1,7 @@
 import { PrismaClient } from '@prisma/client'
-
-const globalForPrisma = globalThis as unknown as { prisma: PrismaClient }
-
-const prismaClient = new PrismaClient()
-
 import { hash } from 'bcryptjs'
+
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
 
 // Auto-seed function
 async function ensureDefaults(client: PrismaClient) {
@@ -55,14 +52,36 @@ async function ensureDefaults(client: PrismaClient) {
             })
             console.log('✅ Default user created: admin / admin123')
         }
+
+        // 3. Every user needs a fallback account. Existing transactions are
+        // attached here during the migration from the account-less schema.
+        const users = await client.user.findMany({ select: { id: true } })
+        for (const user of users) {
+            const defaultAccount = await client.account.upsert({
+                where: { userId_name: { userId: user.id, name: "Legacy / Unassigned" } },
+                update: {},
+                create: { name: "Legacy / Unassigned", type: "OTHER", userId: user.id }
+            })
+            await client.transaction.updateMany({
+                where: { userId: user.id, accountId: null },
+                data: { accountId: defaultAccount.id }
+            })
+        }
     } catch (e) {
         console.error('❌ Seeding error:', e)
     }
 }
 
-// Execute auto-seed
-ensureDefaults(prismaClient).catch(console.error)
+// Hot reload can retain a Prisma instance generated from an older schema.
+// Recreate it when a newly added model delegate is missing.
+const cachedPrisma = globalForPrisma.prisma
+const hasCurrentSchema = cachedPrisma
+    && typeof cachedPrisma.project !== 'undefined'
+    && typeof cachedPrisma.account !== 'undefined'
+    && typeof cachedPrisma.recurringSchedule !== 'undefined'
+export const prisma = hasCurrentSchema ? cachedPrisma : new PrismaClient()
 
-export const prisma = globalForPrisma.prisma || prismaClient
+// Execute auto-seed
+ensureDefaults(prisma).catch(console.error)
 
 if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma

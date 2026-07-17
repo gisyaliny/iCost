@@ -2,25 +2,39 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { redirect } from "next/navigation"
 import { prisma } from "@/lib/prisma"
-import { TransactionDashboard, AddTransactionButton, ManageCategories, CSVImport, ManageProperties, UserSettings } from "@/components/DashboardComponents"
+import { TransactionDashboard, AddTransactionButton, CSVImport } from "@/components/DashboardComponents"
+import { getAccountsWithBalances } from "@/lib/accounts"
+import { projectView, settingsView, transactionView } from "@/lib/finance-view"
 
 export default async function Home() {
   const session = await getServerSession(authOptions)
   if (!session) redirect("/login")
 
-  const transactions = await prisma.transaction.findMany({
+  const transactionRows = await prisma.transaction.findMany({
     where: { userId: session.user.id },
-    include: { category: true, property: true },
+    include: { category: true, property: true, project: true, account: true },
     orderBy: { date: 'desc' }
   })
 
-  const totalTransactionsCount = await prisma.transaction.count({
-    where: { userId: session.user.id }
-  })
-  
   const categories = await prisma.category.findMany()
   const properties = await prisma.property.findMany({
-    where: { userId: session.user.id }
+    where: { userId: session.user.id, isArchived: false }
+  })
+  const transactions = transactionRows.map(transactionView)
+  const projectRows = await prisma.project.findMany({
+    where: { userId: session.user.id, isArchived: false },
+    orderBy: { createdAt: 'desc' }
+  })
+  const projects = projectRows.map(projectView)
+  const accounts = await getAccountsWithBalances(session.user.id)
+  const userSettingsRow = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { monthlyBudgetCents: true, currency: true, locale: true, timezone: true }
+  })
+  const userSettings = userSettingsRow ? settingsView(userSettingsRow) : null
+  const importProfiles = await prisma.importProfile.findMany({
+    where: { userId: session.user.id },
+    orderBy: { updatedAt: "desc" }
   })
 
   return (
@@ -31,15 +45,18 @@ export default async function Home() {
                <p className="text-slate-500 mt-1">Welcome back, {session.user.name}!</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            <CSVImport existingTransactions={transactions} />
-            <AddTransactionButton categories={categories} properties={properties} transactions={transactions} />
+            <CSVImport existingTransactions={transactions} settings={userSettings} importProfiles={importProfiles} categories={categories} />
+            <AddTransactionButton categories={categories} properties={properties} projects={projects} accounts={accounts} transactions={transactions} settings={userSettings} />
           </div>
       </div>
       
       <TransactionDashboard 
         transactions={transactions} 
         categories={categories} 
-        totalCount={totalTransactionsCount}
+        properties={properties}
+        projects={projects}
+        accounts={accounts}
+        settings={userSettings}
       />
     </div>
   )

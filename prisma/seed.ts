@@ -7,6 +7,7 @@ async function main() {
     // 1. Clean existing data
     await prisma.transaction.deleteMany()
     await prisma.property.deleteMany()
+    await prisma.project.deleteMany()
     await prisma.category.deleteMany()
     await prisma.user.deleteMany()
 
@@ -20,7 +21,7 @@ async function main() {
     })
 
     // 3. Create Properties
-    const rental = await prisma.property.create({
+    await prisma.property.create({
         data: { name: "Rental Apt 4B", address: "123 Main St", userId: user.id }
     })
 

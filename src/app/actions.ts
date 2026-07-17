@@ -1,11 +1,110 @@
 "use server"
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { prisma } from "@/lib/prisma"
 import { hash } from "bcryptjs"
 import { revalidatePath } from "next/cache"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
+import { fromCents, roundMoney, toCents } from "@/lib/money"
+import { z } from "zod"
+import { transactionFingerprint } from "@/lib/accounting"
+import { createHash } from "node:crypto"
+import { mkdir, readdir, readFile, stat } from "node:fs/promises"
+import path from "node:path"
+import { CSVMapping, parseStatementText, statementFileType } from "@/lib/statement-import"
+
+const importedTransactionSchema = z.object({
+    amount: z.number().finite().positive(),
+    description: z.string().trim().max(500).default("Imported Transaction"),
+    date: z.coerce.date(),
+    type: z.enum(["INCOME", "EXPENSE"]),
+    categoryId: z.string().uuid().optional(),
+    note: z.string().trim().max(1000).optional(),
+    externalId: z.string().trim().max(500).optional(),
+    reviewReason: z.string().trim().max(500).optional(),
+})
+
+const importOptionsSchema = z.object({
+    filename: z.string().trim().min(1).max(255).optional(),
+    fileHash: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+    origin: z.enum(["UPLOAD", "NAS_INBOX"]).default("UPLOAD"),
+    format: z.enum(["csv", "ofx", "qfx"]).default("csv"),
+}).default({ origin: "UPLOAD", format: "csv" })
+
+const MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024
+const IMPORT_INBOX_DIR = path.resolve(process.env.IMPORT_INBOX_DIR || path.join(process.cwd(), "imports"))
+
+function safeInboxFile(filename: string) {
+    if (!filename || filename !== path.basename(filename)) throw new Error("Invalid inbox filename")
+    const resolved = path.resolve(IMPORT_INBOX_DIR, filename)
+    if (!resolved.startsWith(`${IMPORT_INBOX_DIR}${path.sep}`)) throw new Error("Invalid inbox filename")
+    return resolved
+}
+
+function fileDigest(content: Buffer | string) {
+    return createHash("sha256").update(content).digest("hex")
+}
+
+function transactionKey(transaction: { date: Date, amount: number, description: string | null, type: string }) {
+    return transactionFingerprint({ ...transaction, amountCents: toCents(transaction.amount) })
+}
+
+function isStatementImport(source: string | null) {
+    return source === "CSV_IMPORT" || source === "OFX_IMPORT" || source === "QFX_IMPORT"
+}
+
+function parseDateInput(value: string | null, fallback = new Date()) {
+    if (!value) return fallback
+    const date = new Date(`${value}T12:00:00.000Z`)
+    return Number.isNaN(date.getTime()) ? null : date
+}
+
+async function resolveOwnedAccount(userId: string, requestedAccountId: string | null) {
+    if (requestedAccountId && requestedAccountId !== "NONE") {
+        return prisma.account.findFirst({
+            where: { id: requestedAccountId, userId, isArchived: false },
+            select: { id: true },
+        })
+    }
+
+    return prisma.account.upsert({
+        where: { userId_name: { userId, name: "Legacy / Unassigned" } },
+        update: {},
+        create: { userId, name: "Legacy / Unassigned", type: "OTHER" },
+        select: { id: true },
+    })
+}
+
+async function resolveUncategorizedCategory(type: "INCOME" | "EXPENSE") {
+    const name = type === "INCOME" ? "Uncategorized Income" : "Uncategorized"
+    return prisma.category.upsert({
+        where: { name },
+        update: {},
+        create: { name, icon: "❓", color: "bg-gray-100", type },
+        select: { id: true, type: true },
+    })
+}
+
+function nextRecurringDate(current: Date, start: Date, frequency: string) {
+    const next = new Date(current)
+    if (frequency === "DAILY") {
+        next.setUTCDate(next.getUTCDate() + 1)
+    } else if (frequency === "WEEKLY") {
+        next.setUTCDate(next.getUTCDate() + 7)
+    } else if (frequency === "MONTHLY") {
+        const targetMonth = next.getUTCMonth() + 1
+        const targetYear = next.getUTCFullYear() + Math.floor(targetMonth / 12)
+        const normalizedMonth = targetMonth % 12
+        const lastDay = new Date(Date.UTC(targetYear, normalizedMonth + 1, 0)).getUTCDate()
+        next.setUTCFullYear(targetYear, normalizedMonth, Math.min(start.getUTCDate(), lastDay))
+    } else if (frequency === "YEARLY") {
+        const targetYear = next.getUTCFullYear() + 1
+        const lastDay = new Date(Date.UTC(targetYear, start.getUTCMonth() + 1, 0)).getUTCDate()
+        next.setUTCFullYear(targetYear, start.getUTCMonth(), Math.min(start.getUTCDate(), lastDay))
+    } else {
+        return null
+    }
+    return next
+}
 
 export async function registerUser(formData: FormData) {
     const username = formData.get("username") as string
@@ -26,8 +125,8 @@ export async function registerUser(formData: FormData) {
         })
 
         return { success: true }
-    } catch (e) {
-        console.error("Registration Error:", e)
+    } catch (error) {
+        console.error("Registration Error:", error)
         return { error: "Registration failed. Check server logs." }
     }
 }
@@ -46,7 +145,7 @@ export async function addCategory(formData: FormData) {
         })
         revalidatePath("/")
         return { success: true }
-    } catch (e) {
+    } catch {
         return { error: "Failed to create category" }
     }
 }
@@ -55,68 +154,84 @@ export async function addTransaction(formData: FormData) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
 
-    const amount = parseFloat(formData.get("amount") as string)
+    const amount = roundMoney(Number(formData.get("amount")))
+    const amountCents = Number.isFinite(amount) ? toCents(amount) : 0
     const description = formData.get("description") as string
+    const note = (formData.get("note") as string | null)?.trim() || null
     const categoryId = formData.get("categoryId") as string
-    const propertyId = formData.get("propertyId") as string
+    const requestedPropertyId = formData.get("propertyId") as string | null
+    const propertyId = requestedPropertyId && requestedPropertyId !== "NONE" ? requestedPropertyId : null
+    const requestedProjectId = formData.get("projectId") as string | null
+    const projectId = requestedProjectId && requestedProjectId !== "NONE" ? requestedProjectId : null
+    const requestedAccountId = formData.get("accountId") as string | null
     const dateStr = formData.get("date") as string
     const type = formData.get("type") as string || "EXPENSE"
     const frequency = formData.get("frequency") as string || "NONE"
     const repeatUntilStr = formData.get("repeatUntil") as string
 
-    if (!amount || !categoryId) return { error: "Missing fields" }
+    if (!Number.isFinite(amount) || amount <= 0 || !categoryId) return { error: "Invalid amount or category" }
+    if (note && note.length > 1000) return { error: "Note is too long" }
+    if (projectId) {
+        const project = await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id }, select: { id: true } })
+        if (!project) return { error: "Project not found" }
+    }
 
     try {
-        const startDate = dateStr ? new Date(dateStr) : new Date()
-        const transactionsToCreate = []
-
-        // Base transaction
-        transactionsToCreate.push({
-            amount,
+        const account = await resolveOwnedAccount(session.user.id, requestedAccountId)
+        if (!account) return { error: "Account not found" }
+        const startDate = parseDateInput(dateStr)
+        if (!startDate) return { error: "Invalid transaction date" }
+        const transactionData = {
+            amountCents,
             description,
+            note,
             categoryId,
             userId: session.user.id,
             date: startDate,
             type,
             source: "MANUAL",
-            propertyId: propertyId || null
-        })
-
-        if (frequency !== "NONE" && repeatUntilStr) {
-            const endDate = new Date(repeatUntilStr)
-            let currentDate = new Date(startDate)
-
-            while (true) {
-                if (frequency === "DAILY") currentDate.setDate(currentDate.getDate() + 1)
-                else if (frequency === "WEEKLY") currentDate.setDate(currentDate.getDate() + 7)
-                else if (frequency === "MONTHLY") currentDate.setMonth(currentDate.getMonth() + 1)
-                else if (frequency === "YEARLY") currentDate.setFullYear(currentDate.getFullYear() + 1)
-                else break
-
-                if (currentDate > endDate) break
-
-                transactionsToCreate.push({
-                    amount,
-                    description,
-                    categoryId,
-                    userId: session.user.id,
-                    date: new Date(currentDate),
-                    type,
-                    source: "RECURRING",
-                    propertyId: propertyId || null
-                })
-
-                if (transactionsToCreate.length > 500) break // Safety limit
-            }
+            propertyId: propertyId || null,
+            projectId,
+            accountId: account.id,
         }
 
-        await prisma.transaction.createMany({
-            data: transactionsToCreate
-        })
+        if (frequency !== "NONE" && !repeatUntilStr) return { error: "Repeat end date is required for recurring transactions" }
+
+        if (frequency !== "NONE" && repeatUntilStr) {
+            const endDate = parseDateInput(repeatUntilStr)
+            if (!endDate || endDate < startDate) return { error: "Repeat end date must be on or after the transaction date" }
+            const nextDate = nextRecurringDate(startDate, startDate, frequency)
+            if (!nextDate) return { error: "Invalid recurrence frequency" }
+
+            await prisma.$transaction(async tx => {
+                const schedule = await tx.recurringSchedule.create({
+                    data: {
+                        name: description?.trim() || `${frequency.toLowerCase()} transaction`,
+                        amountCents,
+                        description,
+                        note,
+                        type,
+                        frequency,
+                        nextDate,
+                        endDate,
+                        autoPost: true,
+                        isActive: nextDate <= endDate,
+                        userId: session.user.id,
+                        categoryId,
+                        propertyId,
+                        projectId,
+                        accountId: account.id,
+                    },
+                })
+                await tx.transaction.create({ data: { ...transactionData, recurringScheduleId: schedule.id } })
+            })
+        } else {
+            await prisma.transaction.create({ data: transactionData })
+        }
 
         revalidatePath("/")
         return { success: true }
-    } catch (e) {
+    } catch {
         return { error: "Failed to add transaction" }
     }
 }
@@ -126,10 +241,11 @@ export async function deleteTransaction(id: string) {
     if (!session?.user?.id) return { error: "Unauthorized" }
 
     try {
-        await prisma.transaction.delete({ where: { id } })
+        const result = await prisma.transaction.deleteMany({ where: { id, userId: session.user.id } })
+        if (result.count === 0) return { error: "Transaction not found" }
         revalidatePath("/")
         return { success: true }
-    } catch (e) {
+    } catch {
         return { error: "Failed to delete" }
     }
 }
@@ -138,35 +254,60 @@ export async function updateTransaction(id: string, formData: FormData) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
 
-    const amount = parseFloat(formData.get("amount") as string)
+    const amount = roundMoney(Number(formData.get("amount")))
+    const amountCents = Number.isFinite(amount) ? toCents(amount) : 0
     const description = formData.get("description") as string
+    const note = (formData.get("note") as string | null)?.trim() || null
     const categoryId = formData.get("categoryId") as string
-    const propertyId = formData.get("propertyId") as string
+    const requestedPropertyId = formData.get("propertyId") as string | null
+    const propertyId = requestedPropertyId && requestedPropertyId !== "NONE" ? requestedPropertyId : null
+    const requestedProjectId = formData.get("projectId") as string | null
+    const projectId = requestedProjectId && requestedProjectId !== "NONE" ? requestedProjectId : null
+    const requestedAccountId = formData.get("accountId") as string | null
     const dateStr = formData.get("date") as string
     const type = formData.get("type") as string
 
-    if (!amount || !categoryId) return { error: "Missing fields" }
+    if (!Number.isFinite(amount) || amount <= 0 || !categoryId) return { error: "Invalid amount or category" }
+    if (note && note.length > 1000) return { error: "Note is too long" }
+    if (projectId) {
+        const project = await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id }, select: { id: true } })
+        if (!project) return { error: "Project not found" }
+    }
 
     try {
+        const account = await resolveOwnedAccount(session.user.id, requestedAccountId)
+        if (!account) return { error: "Account not found" }
+        const existing = await prisma.transaction.findFirst({
+            where: { id, userId: session.user.id },
+            select: { id: true, source: true, description: true }
+        })
+        if (!existing) return { error: "Transaction not found" }
+
+        const transactionDate = dateStr ? parseDateInput(dateStr) : undefined
+        if (dateStr && !transactionDate) return { error: "Invalid transaction date" }
+
         await prisma.transaction.update({
-            where: { id },
+            where: { id: existing.id },
             data: {
-                amount,
-                description,
+                amountCents,
+                description: isStatementImport(existing.source) ? existing.description : description,
+                note,
                 categoryId,
-                date: dateStr ? new Date(dateStr) : undefined,
+                date: transactionDate || undefined,
                 type,
-                propertyId: propertyId || null
+                propertyId: propertyId || null,
+                projectId,
+                accountId: account.id,
             }
         })
         revalidatePath("/")
         return { success: true }
-    } catch (e) {
+    } catch {
         return { error: "Failed to update transaction" }
     }
 }
 
-export async function importTransactions(data: any[]) {
+export async function importTransactions(data: unknown[], requestedOptions?: unknown) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
 
@@ -174,29 +315,93 @@ export async function importTransactions(data: any[]) {
     const userExists = await prisma.user.findUnique({ where: { id: session.user.id } })
     if (!userExists) return { error: "User session invalid. Please logout and login again." }
 
-    // Auto-create 'Uncategorized' if not exists
-    let defaultCat = await prisma.category.findUnique({ where: { name: 'Uncategorized' } })
-    if (!defaultCat) {
-        defaultCat = await prisma.category.create({ data: { name: 'Uncategorized', icon: '❓', color: 'bg-gray-100', type: 'EXPENSE' } })
-    }
+    const parsed = z.array(importedTransactionSchema).max(5000).safeParse(data)
+    if (!parsed.success) return { error: "Statement contains invalid dates, amounts, or transaction types." }
+    const parsedOptions = importOptionsSchema.safeParse(requestedOptions)
+    if (!parsedOptions.success) return { error: "Invalid import metadata." }
+    const options = parsedOptions.data
 
-    let count = 0
-    for (const item of data) {
-        await prisma.transaction.create({
+    try {
+        const [defaultExpenseCategory, defaultIncomeCategory] = await Promise.all([
+            resolveUncategorizedCategory("EXPENSE"),
+            resolveUncategorizedCategory("INCOME"),
+        ])
+
+        const account = await resolveOwnedAccount(session.user.id, null)
+        if (!account) return { error: "Default account could not be created" }
+        if (options.fileHash) {
+            const previousBatch = await prisma.importBatch.findUnique({
+                where: { userId_fileHash: { userId: session.user.id, fileHash: options.fileHash } },
+                select: { id: true },
+            })
+            if (previousBatch) return { success: true, count: 0, skipped: parsed.data.length, alreadyImported: true }
+        }
+        const importBatch = await prisma.importBatch.create({
             data: {
-                amount: item.amount,
-                description: item.description,
-                date: new Date(item.date),
-                type: item.type || (item.amount > 0 ? "INCOME" : "EXPENSE"),
-                source: "CSV_IMPORT",
                 userId: session.user.id,
-                categoryId: defaultCat.id
-            }
+                filename: options.filename || `${options.format.toUpperCase()} import`,
+                fileHash: options.fileHash,
+                source: options.origin,
+            },
+            select: { id: true },
         })
-        count++
+
+        const existing = await prisma.transaction.findMany({
+            where: { userId: session.user.id },
+            select: { date: true, amountCents: true, description: true, type: true, externalId: true }
+        })
+        const rules = await prisma.categoryRule.findMany({
+            where: { userId: session.user.id, isEnabled: true },
+            orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+            select: { pattern: true, matchType: true, categoryId: true, category: { select: { type: true } } },
+        })
+        const categoryTypes = new Map((await prisma.category.findMany({ select: { id: true, type: true } })).map(item => [item.id, item.type]))
+        const seen = new Set(existing.map(item => transactionKey({ ...item, amount: fromCents(item.amountCents) })))
+        const seenExternalIds = new Set(existing.flatMap(item => item.externalId ? [item.externalId] : []))
+        const transactions = parsed.data.flatMap(item => {
+            const normalized = {
+                ...item,
+                amount: roundMoney(item.amount),
+                description: item.description || "Imported Transaction",
+            }
+            const key = transactionKey(normalized)
+            if ((normalized.externalId && seenExternalIds.has(normalized.externalId)) || seen.has(key)) return []
+            seen.add(key)
+            if (normalized.externalId) seenExternalIds.add(normalized.externalId)
+            const description = normalized.description.toLocaleLowerCase()
+            const matchingRule = rules.find(rule => {
+                if (rule.category.type !== normalized.type) return false
+                const pattern = rule.pattern.toLocaleLowerCase()
+                if (rule.matchType === "EXACT") return description === pattern
+                if (rule.matchType === "STARTS_WITH") return description.startsWith(pattern)
+                return description.includes(pattern)
+            })
+            const { amount: normalizedAmount, ...rest } = normalized
+            const requestedCategoryIsValid = normalized.categoryId && categoryTypes.get(normalized.categoryId) === normalized.type
+            const defaultCategory = normalized.type === "INCOME" ? defaultIncomeCategory : defaultExpenseCategory
+            return [{
+                ...rest,
+                amountCents: toCents(normalizedAmount),
+                source: `${options.format.toUpperCase()}_IMPORT`,
+                reviewed: false,
+                userId: session.user.id,
+                categoryId: requestedCategoryIsValid ? normalized.categoryId : matchingRule?.categoryId || defaultCategory.id,
+                accountId: account.id,
+                importBatchId: importBatch.id,
+            }]
+        })
+
+        if (transactions.length > 0) {
+            await prisma.transaction.createMany({ data: transactions })
+        } else if (!options.fileHash) {
+            await prisma.importBatch.delete({ where: { id: importBatch.id } })
+        }
+        revalidatePath("/")
+        revalidatePath("/analysis")
+        return { success: true, count: transactions.length, skipped: parsed.data.length - transactions.length }
+    } catch {
+        return { error: "Failed to import transactions" }
     }
-    revalidatePath("/")
-    return { success: true, count }
 }
 
 export async function deleteTransactions(ids: string[]) {
@@ -212,7 +417,7 @@ export async function deleteTransactions(ids: string[]) {
         })
         revalidatePath("/")
         return { success: true }
-    } catch (e) {
+    } catch {
         return { error: "Failed to delete" }
     }
 }
@@ -229,7 +434,7 @@ export async function removeDuplicates() {
     const duplicates = []
 
     for (const t of transactions) {
-        const key = `${t.date.toISOString().split('T')[0]}-${t.amount}-${t.description}-${t.type}`
+        const key = transactionFingerprint(t)
         if (seen.has(key)) {
             duplicates.push(t.id)
         } else {
@@ -249,17 +454,436 @@ export async function removeDuplicates() {
     return { success: true, count: duplicates.length }
 }
 
+export async function scanImportInbox() {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    try {
+        await mkdir(IMPORT_INBOX_DIR, { recursive: true })
+        const entries = (await readdir(IMPORT_INBOX_DIR, { withFileTypes: true }))
+            .filter(entry => entry.isFile() && statementFileType(entry.name))
+            .slice(0, 100)
+        const files = await Promise.all(entries.map(async entry => {
+            const filepath = safeInboxFile(entry.name)
+            const info = await stat(filepath)
+            if (info.size > MAX_IMPORT_FILE_BYTES) {
+                return { name: entry.name, size: info.size, modifiedAt: info.mtime.toISOString(), hash: "", imported: false, error: "File exceeds 10 MB" }
+            }
+            const content = await readFile(filepath)
+            return { name: entry.name, size: info.size, modifiedAt: info.mtime.toISOString(), hash: fileDigest(content), imported: false }
+        }))
+        const hashes = files.flatMap(file => file.hash ? [file.hash] : [])
+        const imported = hashes.length ? await prisma.importBatch.findMany({
+            where: { userId: session.user.id, fileHash: { in: hashes } },
+            select: { fileHash: true },
+        }) : []
+        const importedHashes = new Set(imported.flatMap(item => item.fileHash ? [item.fileHash] : []))
+        return {
+            success: true,
+            directory: IMPORT_INBOX_DIR,
+            files: files.map(file => ({ ...file, imported: importedHashes.has(file.hash) })).sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt)),
+        }
+    } catch (error) {
+        console.error("Inbox scan failed", error)
+        return { error: "Could not read the NAS import folder. Check its path and permissions." }
+    }
+}
+
+export async function previewInboxFile(filename: string, mapping?: CSVMapping) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    try {
+        const format = statementFileType(filename)
+        if (!format) return { error: "Only CSV, OFX, and QFX files are supported." }
+        const filepath = safeInboxFile(filename)
+        const info = await stat(filepath)
+        if (!info.isFile() || info.size > MAX_IMPORT_FILE_BYTES) return { error: "Import files must be 10 MB or smaller." }
+        const content = await readFile(filepath)
+        const parsed = parseStatementText(filename, content.toString("utf8"), mapping)
+        return {
+            success: true,
+            filename,
+            fileHash: fileDigest(content),
+            format,
+            transactions: parsed.transactions,
+            invalidRows: parsed.invalidRows,
+            csv: parsed.csv,
+        }
+    } catch (error) {
+        console.error("Inbox preview failed", error)
+        return { error: "The statement could not be parsed. It may be incomplete or use an unsupported format." }
+    }
+}
+
+export async function markTransactionsReviewed(ids: string[]) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    if (!ids.length) return { error: "No transactions selected" }
+
+    const result = await prisma.transaction.updateMany({
+        where: { id: { in: ids }, userId: session.user.id },
+        data: { reviewed: true, reviewReason: null },
+    })
+    revalidatePath("/")
+    revalidatePath("/analysis")
+    return { success: true, count: result.count }
+}
+
+export async function updateTransactionReview(id: string, requestedType: string, approve = false) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    if (!new Set(["INCOME", "EXPENSE"]).has(requestedType)) return { error: "Invalid transaction type" }
+    const type = requestedType as "INCOME" | "EXPENSE"
+    const existing = await prisma.transaction.findFirst({
+        where: { id, userId: session.user.id },
+        select: { id: true, category: { select: { type: true } } },
+    })
+    if (!existing) return { error: "Transaction not found" }
+    const fallbackCategory = existing.category?.type === type ? null : await resolveUncategorizedCategory(type)
+    await prisma.transaction.update({
+        where: { id },
+        data: {
+            type,
+            ...(fallbackCategory ? { categoryId: fallbackCategory.id } : {}),
+            ...(approve ? { reviewed: true, reviewReason: null } : {}),
+        },
+    })
+    revalidatePath("/")
+    revalidatePath("/analysis")
+    return { success: true }
+}
+
+export async function addCategoryRule(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const pattern = (formData.get("pattern") as string | null)?.trim()
+    const categoryId = formData.get("categoryId") as string
+    const matchType = (formData.get("matchType") as string | null) || "CONTAINS"
+    if (!name || !pattern || !categoryId) return { error: "Name, pattern, and category are required" }
+    if (!new Set(["CONTAINS", "STARTS_WITH", "EXACT"]).has(matchType)) return { error: "Invalid match type" }
+    const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } })
+    if (!category) return { error: "Category not found" }
+
+    await prisma.categoryRule.create({
+        data: { name, pattern, matchType, categoryId, userId: session.user.id },
+    })
+    revalidatePath("/")
+    return { success: true }
+}
+
+export async function saveImportProfile(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const name = (formData.get("name") as string | null)?.trim()
+    const dateColumn = (formData.get("dateColumn") as string | null)?.trim()
+    const descriptionColumn = (formData.get("descriptionColumn") as string | null)?.trim()
+    const amountColumn = (formData.get("amountColumn") as string | null)?.trim()
+    const debitValue = (formData.get("debitColumn") as string | null)?.trim()
+    const creditValue = (formData.get("creditColumn") as string | null)?.trim()
+    const debitColumn = debitValue && debitValue !== "NONE" ? debitValue : null
+    const creditColumn = creditValue && creditValue !== "NONE" ? creditValue : null
+    const typeValue = (formData.get("typeColumn") as string | null)?.trim()
+    const typeColumn = typeValue && typeValue !== "NONE" ? typeValue : null
+    if (!name || !dateColumn || !descriptionColumn || (!amountColumn && !debitColumn && !creditColumn)) return { error: "Profile name, date, description, and amount columns are required" }
+    if ([name, dateColumn, descriptionColumn, amountColumn || "", debitColumn || "", creditColumn || "", typeColumn || ""].some(value => value.length > 200)) return { error: "Import profile value is too long" }
+
+    await prisma.importProfile.upsert({
+        where: { userId_name: { userId: session.user.id, name } },
+        update: { dateColumn, descriptionColumn, amountColumn: amountColumn || "", debitColumn, creditColumn, typeColumn },
+        create: { name, dateColumn, descriptionColumn, amountColumn: amountColumn || "", debitColumn, creditColumn, typeColumn, userId: session.user.id },
+    })
+    revalidatePath("/")
+    return { success: true }
+}
+
+export async function addAccount(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const type = (formData.get("type") as string | null) || "CHECKING"
+    const openingBalance = roundMoney(Number(formData.get("openingBalance") || 0))
+    const allowedTypes = new Set(["CHECKING", "SAVINGS", "CASH", "CREDIT_CARD", "INVESTMENT", "OTHER"])
+
+    if (!name) return { error: "Account name is required" }
+    if (name.length > 100) return { error: "Account name is too long" }
+    if (!allowedTypes.has(type)) return { error: "Invalid account type" }
+    if (!Number.isFinite(openingBalance)) return { error: "Invalid opening balance" }
+
+    try {
+        await prisma.account.create({
+            data: { name, type, openingBalanceCents: toCents(openingBalance), userId: session.user.id },
+        })
+        revalidatePath("/")
+        return { success: true }
+    } catch {
+        return { error: "An account with this name already exists" }
+    }
+}
+
+export async function updateUserSettings(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const monthlyBudget = roundMoney(Number(formData.get("monthlyBudget")))
+    const currency = (formData.get("currency") as string | null) || "USD"
+    const locale = (formData.get("locale") as string | null) || "en-US"
+    const timezone = (formData.get("timezone") as string | null) || "America/New_York"
+    const allowedCurrencies = new Set(["USD", "CAD", "EUR", "GBP", "AUD", "CNY", "JPY"])
+    const allowedLocales = new Set(["en-US", "en-CA", "en-GB", "zh-CN"])
+    const allowedTimezones = new Set(["America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "UTC", "Asia/Shanghai"])
+
+    if (!Number.isFinite(monthlyBudget) || monthlyBudget < 0) return { error: "Invalid monthly budget" }
+    if (!allowedCurrencies.has(currency) || !allowedLocales.has(locale) || !allowedTimezones.has(timezone)) return { error: "Invalid preferences" }
+
+    await prisma.user.update({
+        where: { id: session.user.id },
+        data: { monthlyBudgetCents: toCents(monthlyBudget), currency, locale, timezone },
+    })
+    revalidatePath("/")
+    revalidatePath("/analysis")
+    return { success: true }
+}
+
+export async function addTransfer(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const fromAccountId = formData.get("fromAccountId") as string
+    const toAccountId = formData.get("toAccountId") as string
+    const amount = roundMoney(Number(formData.get("amount")))
+    const date = parseDateInput(formData.get("date") as string | null)
+    const description = (formData.get("description") as string | null)?.trim() || null
+    const note = (formData.get("note") as string | null)?.trim() || null
+
+    if (!fromAccountId || !toAccountId || fromAccountId === toAccountId) return { error: "Choose two different accounts" }
+    if (!Number.isFinite(amount) || amount <= 0) return { error: "Transfer amount must be greater than zero" }
+    if (!date) return { error: "Invalid transfer date" }
+
+    const ownedAccounts = await prisma.account.count({
+        where: { id: { in: [fromAccountId, toAccountId] }, userId: session.user.id, isArchived: false },
+    })
+    if (ownedAccounts !== 2) return { error: "Account not found" }
+
+    try {
+        await prisma.transfer.create({
+            data: { fromAccountId, toAccountId, amountCents: toCents(amount), date, description, note, userId: session.user.id },
+        })
+        revalidatePath("/")
+        revalidatePath("/analysis")
+        revalidatePath("/projects")
+        return { success: true }
+    } catch {
+        return { error: "Failed to record transfer" }
+    }
+}
+
+export async function archiveAccount(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const account = await prisma.account.findFirst({
+        where: { id, userId: session.user.id },
+        select: { id: true, _count: { select: { transactions: true, incoming: true, outgoing: true } } },
+    })
+    if (!account) return { error: "Account not found" }
+    if (account._count.transactions || account._count.incoming || account._count.outgoing) {
+        await prisma.account.update({ where: { id }, data: { isArchived: true } })
+    } else {
+        await prisma.account.delete({ where: { id } })
+    }
+    revalidatePath("/")
+    return { success: true }
+}
+
 export async function addProperty(formData: FormData) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
 
-    const name = formData.get("name") as string
+    const name = (formData.get("name") as string | null)?.trim()
+    const address = (formData.get("address") as string | null)?.trim() || null
     if (!name) return { error: "Name required" }
 
     await prisma.property.create({
-        data: { name, userId: session.user.id }
+        data: { name, address, userId: session.user.id }
     })
     revalidatePath("/")
+    return { success: true }
+}
+
+export async function assignTransactionsToProject(ids: string[], requestedProjectId: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    if (ids.length === 0) return { error: "No transactions selected" }
+
+    const projectId = requestedProjectId === "NONE" ? null : requestedProjectId
+    if (projectId) {
+        const project = await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id }, select: { id: true } })
+        if (!project) return { error: "Project not found" }
+    }
+
+    try {
+        const result = await prisma.transaction.updateMany({
+            where: { id: { in: ids }, userId: session.user.id },
+            data: { projectId }
+        })
+        revalidatePath("/")
+        revalidatePath("/analysis")
+        return { success: true, count: result.count }
+    } catch {
+        return { error: "Failed to assign project" }
+    }
+}
+
+export async function addProject(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const description = (formData.get("description") as string | null)?.trim() || null
+    const budgetValue = formData.get("budget") as string | null
+    const budget = budgetValue ? roundMoney(Number(budgetValue)) : null
+    const startDateValue = formData.get("startDate") as string | null
+    const endDateValue = formData.get("endDate") as string | null
+    const startDate = startDateValue ? parseDateInput(startDateValue) : null
+    const endDate = endDateValue ? parseDateInput(endDateValue) : null
+    if (!name) return { error: "Project name is required" }
+    if (name.length > 100) return { error: "Project name is too long" }
+    if (description && description.length > 300) return { error: "Project description is too long" }
+    if (budget !== null && (!Number.isFinite(budget) || budget < 0)) return { error: "Invalid project budget" }
+    if ((startDateValue && !startDate) || (endDateValue && !endDate)) return { error: "Invalid project date" }
+    if (startDate && endDate && endDate < startDate) return { error: "Project end date must be after its start date" }
+
+    try {
+        await prisma.project.create({
+            data: { name, description, budgetCents: budget === null ? null : toCents(budget), startDate, endDate, userId: session.user.id }
+        })
+        revalidatePath("/")
+        revalidatePath("/analysis")
+        revalidatePath("/projects")
+        return { success: true }
+    } catch {
+        return { error: "A project with this name already exists" }
+    }
+}
+
+export async function updateProject(id: string, formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const description = (formData.get("description") as string | null)?.trim() || null
+    const budgetValue = formData.get("budget") as string | null
+    const budget = budgetValue ? roundMoney(Number(budgetValue)) : null
+    const startDateValue = formData.get("startDate") as string | null
+    const endDateValue = formData.get("endDate") as string | null
+    const startDate = startDateValue ? parseDateInput(startDateValue) : null
+    const endDate = endDateValue ? parseDateInput(endDateValue) : null
+
+    if (!name) return { error: "Project name is required" }
+    if (name.length > 100 || (description && description.length > 300)) return { error: "Project details are too long" }
+    if (budget !== null && (!Number.isFinite(budget) || budget < 0)) return { error: "Invalid project budget" }
+    if ((startDateValue && !startDate) || (endDateValue && !endDate)) return { error: "Invalid project date" }
+    if (startDate && endDate && endDate < startDate) return { error: "Project end date must be after its start date" }
+
+    try {
+        const result = await prisma.project.updateMany({
+            where: { id, userId: session.user.id },
+            data: { name, description, budgetCents: budget === null ? null : toCents(budget), startDate, endDate },
+        })
+        if (!result.count) return { error: "Project not found" }
+        revalidatePath("/")
+        revalidatePath("/analysis")
+        revalidatePath("/projects")
+        return { success: true }
+    } catch {
+        return { error: "A project with this name already exists" }
+    }
+}
+
+export async function archiveProject(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const result = await prisma.project.updateMany({ where: { id, userId: session.user.id }, data: { isArchived: true, status: "ARCHIVED" } })
+    if (!result.count) return { error: "Project not found" }
+    revalidatePath("/")
+    revalidatePath("/analysis")
+    revalidatePath("/projects")
+    return { success: true }
+}
+
+export async function archiveProperty(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const result = await prisma.property.updateMany({ where: { id, userId: session.user.id }, data: { isArchived: true } })
+    if (!result.count) return { error: "Property not found" }
+    revalidatePath("/")
+    revalidatePath("/analysis")
+    return { success: true }
+}
+
+export async function updateRecurringSchedule(id: string, formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const description = (formData.get("description") as string | null)?.trim() || null
+    const note = (formData.get("note") as string | null)?.trim() || null
+    const amount = roundMoney(Number(formData.get("amount")))
+    const type = formData.get("type") as string
+    const frequency = formData.get("frequency") as string
+    const interval = Number(formData.get("interval") || 1)
+    const nextDate = parseDateInput(formData.get("nextDate") as string | null)
+    const endDateValue = formData.get("endDate") as string | null
+    const endDate = endDateValue ? parseDateInput(endDateValue) : null
+    const categoryId = (formData.get("categoryId") as string | null) || null
+    const propertyValue = formData.get("propertyId") as string | null
+    const projectValue = formData.get("projectId") as string | null
+    const accountValue = formData.get("accountId") as string | null
+    const propertyId = propertyValue && propertyValue !== "NONE" ? propertyValue : null
+    const projectId = projectValue && projectValue !== "NONE" ? projectValue : null
+    const accountId = accountValue && accountValue !== "NONE" ? accountValue : null
+
+    if (!name || !Number.isFinite(amount) || amount <= 0) return { error: "Name and a positive amount are required" }
+    if (!new Set(["INCOME", "EXPENSE"]).has(type)) return { error: "Invalid transaction type" }
+    if (!new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]).has(frequency)) return { error: "Invalid frequency" }
+    if (!Number.isInteger(interval) || interval < 1 || interval > 365) return { error: "Invalid interval" }
+    if (!nextDate || (endDate && endDate < nextDate)) return { error: "Invalid schedule dates" }
+
+    const existing = await prisma.recurringSchedule.findFirst({ where: { id, userId: session.user.id }, select: { id: true } })
+    if (!existing) return { error: "Schedule not found" }
+    if (accountId && !await prisma.account.findFirst({ where: { id: accountId, userId: session.user.id, isArchived: false } })) return { error: "Account not found" }
+    if (projectId && !await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id, isArchived: false } })) return { error: "Project not found" }
+    if (propertyId && !await prisma.property.findFirst({ where: { id: propertyId, userId: session.user.id, isArchived: false } })) return { error: "Property not found" }
+
+    await prisma.recurringSchedule.update({
+        where: { id },
+        data: { name, description, note, amountCents: toCents(amount), type, frequency, interval, nextDate, endDate, categoryId, propertyId, projectId, accountId },
+    })
+    revalidatePath("/recurring")
+    return { success: true }
+}
+
+export async function toggleRecurringSchedule(id: string, isActive: boolean) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const result = await prisma.recurringSchedule.updateMany({ where: { id, userId: session.user.id }, data: { isActive } })
+    if (!result.count) return { error: "Schedule not found" }
+    revalidatePath("/recurring")
+    return { success: true }
+}
+
+export async function deleteRecurringSchedule(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const existing = await prisma.recurringSchedule.findFirst({ where: { id, userId: session.user.id }, select: { id: true } })
+    if (!existing) return { error: "Schedule not found" }
+    await prisma.$transaction([
+        prisma.transaction.updateMany({ where: { recurringScheduleId: id, userId: session.user.id }, data: { recurringScheduleId: null } }),
+        prisma.recurringSchedule.delete({ where: { id } }),
+    ])
+    revalidatePath("/recurring")
     return { success: true }
 }
 
@@ -267,9 +891,24 @@ export async function resetAllData() {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
 
-    await prisma.transaction.deleteMany({
-        where: { userId: session.user.id }
+    await prisma.$transaction(async tx => {
+        await tx.transaction.deleteMany({ where: { userId: session.user.id } })
+        await tx.transfer.deleteMany({ where: { userId: session.user.id } })
+        await tx.recurringSchedule.deleteMany({ where: { userId: session.user.id } })
+        await tx.categoryBudget.deleteMany({ where: { userId: session.user.id } })
+        await tx.categoryRule.deleteMany({ where: { userId: session.user.id } })
+        await tx.importBatch.deleteMany({ where: { userId: session.user.id } })
+        await tx.importProfile.deleteMany({ where: { userId: session.user.id } })
+        await tx.project.deleteMany({ where: { userId: session.user.id } })
+        await tx.property.deleteMany({ where: { userId: session.user.id } })
+        await tx.account.deleteMany({ where: { userId: session.user.id } })
+        await tx.account.create({ data: { userId: session.user.id, name: "Legacy / Unassigned", type: "OTHER" } })
+        await tx.user.update({
+            where: { id: session.user.id },
+            data: { monthlyBudgetCents: 200000, currency: "USD", locale: "en-US", timezone: "America/New_York" },
+        })
     })
     revalidatePath("/")
+    revalidatePath("/analysis")
     return { success: true }
 }

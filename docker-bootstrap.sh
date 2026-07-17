@@ -21,25 +21,30 @@ fi
 PRISMA_CLI="./node_modules/prisma/build/index.js"
 
 if [ ! -f "$PRISMA_CLI" ]; then
-    echo "⚠️ Prisma CLI not found at $PRISMA_CLI"
-    echo "Listing node_modules/prisma..."
-    ls -R node_modules/prisma || echo "node_modules/prisma not found"
-    
-    # Fallback to npx (might try to download if cached version missing)
-    echo "Trying npx..."
-    npx prisma db push --accept-data-loss
-else
-    echo "Found Prisma CLI at $PRISMA_CLI"
-    echo "🏗️ Running Prisma DB Push..."
-    node "$PRISMA_CLI" db push --accept-data-loss
+    echo "❌ Prisma CLI not found at $PRISMA_CLI"
+    exit 1
 fi
 
-if [ $? -eq 0 ]; then
-    echo "✅ Database schema sync successful."
-else
-    echo "❌ Database schema sync FAILED."
+# 4. Back up the database and detect installations created before migrations.
+node ./scripts/database-bootstrap.mjs
+PREPARE_STATUS=$?
+
+if [ "$PREPARE_STATUS" -eq 10 ]; then
+    echo "📌 Baselining existing database..."
+    node "$PRISMA_CLI" migrate resolve --applied 20260716150000_existing_baseline || exit 1
+elif [ "$PREPARE_STATUS" -ne 0 ]; then
+    echo "❌ Database backup/preparation failed. Startup aborted."
+    exit "$PREPARE_STATUS"
 fi
 
-# 4. Start the actual server
+# 5. Apply versioned migrations. Never continue after a failed migration.
+echo "🏗️ Applying database migrations..."
+node "$PRISMA_CLI" migrate deploy || {
+    echo "❌ Database migration failed. Startup aborted; the pre-migration backup was kept."
+    exit 1
+}
+echo "✅ Database migrations applied successfully."
+
+# 6. Start the actual server
 echo "⚡ Starting Next.js Production Server..."
 node server.js

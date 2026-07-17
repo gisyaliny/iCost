@@ -4,12 +4,20 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
+import type { Category } from "@prisma/client"
 
-export function CategorySelectorContent({ categories, selectedCategories, toggleCategory, toggleAllCategories }: any) {
+type CategorySelectorContentProps = {
+    categories: Category[]
+    selectedCategories: Set<string>
+    toggleCategory: (id: string) => void
+    toggleAllCategories: () => void
+}
+
+export function CategorySelectorContent({ categories, selectedCategories, toggleCategory, toggleAllCategories }: CategorySelectorContentProps) {
     const [search, setSearch] = useState("")
     const [activeTab, setActiveTab] = useState<"EXPENSE" | "INCOME">("EXPENSE")
 
-    const filteredCats = categories.filter((c: any) => {
+    const filteredCats = categories.filter((c) => {
         const matchesTab = c.type === activeTab
         const matchesSearch = c.name.toLowerCase().includes(search.toLowerCase())
         return matchesTab && matchesSearch
@@ -61,7 +69,7 @@ export function CategorySelectorContent({ categories, selectedCategories, toggle
                 {filteredCats.length === 0 ? (
                     <div className="col-span-3 text-center py-8 text-xs text-slate-400 italic">No categories found</div>
                 ) : (
-                    filteredCats.map((c: any) => (
+                    filteredCats.map((c) => (
                         <div 
                             key={c.id} 
                             className={cn(
@@ -75,6 +83,7 @@ export function CategorySelectorContent({ categories, selectedCategories, toggle
                             <Checkbox 
                                 checked={selectedCategories.has(c.id)} 
                                 onCheckedChange={() => toggleCategory(c.id)} 
+                                onClick={(event) => event.stopPropagation()}
                                 id={`list-cat-${c.id}`} 
                                 className="absolute top-2 right-2 w-4 h-4 rounded-md border-slate-300" 
                             />

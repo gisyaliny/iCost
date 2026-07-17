@@ -3,7 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
-  binaryTargets = ["debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -12,12 +12,24 @@ datasource db {
 }
 
 model User {
-  id           String        @id @default(uuid())
-  username     String        @unique
-  password     String
-  createdAt    DateTime      @default(now())
-  transactions Transaction[]
-  properties   Property[]
+  id                 String              @id @default(uuid())
+  username           String              @unique
+  password           String
+  createdAt          DateTime            @default(now())
+  monthlyBudgetCents Int                 @default(200000)
+  currency           String              @default("USD")
+  locale             String              @default("en-US")
+  timezone           String              @default("America/New_York")
+  transactions       Transaction[]
+  properties         Property[]
+  projects           Project[]
+  accounts           Account[]
+  transfers          Transfer[]
+  categoryBudgets    CategoryBudget[]
+  categoryRules      CategoryRule[]
+  recurringSchedules RecurringSchedule[]
+  importBatches      ImportBatch[]
+  importProfiles     ImportProfile[]
 }
 
 model Category {
@@ -26,32 +38,206 @@ model Category {
   type         String        @default("EXPENSE") // 'EXPENSE' or 'INCOME'
   color        String?
   icon         String?
+  isArchived   Boolean       @default(false)
   transactions Transaction[]
+  budgets      CategoryBudget[]
+  rules        CategoryRule[]
+  recurringSchedules RecurringSchedule[]
 }
 
 model Property {
   id           String        @id @default(uuid())
   name         String
   address      String?
+  isArchived   Boolean        @default(false)
   userId       String
   user         User          @relation(fields: [userId], references: [id])
   transactions Transaction[]
+  recurringSchedules RecurringSchedule[]
+}
+
+model Project {
+  id           String        @id @default(uuid())
+  name         String
+  description  String?
+  budgetCents  Int?
+  startDate    DateTime?
+  endDate      DateTime?
+  status       String        @default("ACTIVE")
+  isArchived   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+  recurringSchedules RecurringSchedule[]
+
+  @@unique([userId, name])
 }
 
 model Transaction {
   id          String   @id @default(uuid())
-  amount      Float
+  amountCents Int      @default(0)
   description String?
+  note        String?
   date        DateTime @default(now())
   type        String   @default("EXPENSE") // 'EXPENSE' or 'INCOME'
-  source      String?  // 'MANUAL', 'CSV_IMPORT'
+  source      String?  // 'MANUAL', 'CSV_IMPORT', 'OFX_IMPORT', 'QFX_IMPORT'
+  externalId  String?
+  reviewed    Boolean  @default(true)
+  reviewReason String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt @default(now())
   
   categoryId  String?
   category    Category? @relation(fields: [categoryId], references: [id])
   
   propertyId  String?
   property    Property? @relation(fields: [propertyId], references: [id])
+
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+
+  accountId   String?
+  account     Account? @relation(fields: [accountId], references: [id])
+
+  recurringScheduleId String?
+  recurringSchedule   RecurringSchedule? @relation(fields: [recurringScheduleId], references: [id])
+
+  importBatchId String?
+  importBatch   ImportBatch? @relation(fields: [importBatchId], references: [id])
   
   userId      String
   user        User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, date])
+  @@index([userId, categoryId])
+  @@index([userId, projectId])
+  @@index([userId, reviewed])
+  @@unique([userId, externalId])
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  name           String
+  type           String        @default("CHECKING")
+  openingBalanceCents Int      @default(0)
+  isArchived     Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  transactions   Transaction[]
+  outgoing       Transfer[]    @relation("TransferFrom")
+  incoming       Transfer[]    @relation("TransferTo")
+  recurringSchedules RecurringSchedule[]
+
+  @@unique([userId, name])
+}
+
+model Transfer {
+  id            String   @id @default(uuid())
+  amountCents   Int      @default(0)
+  date          DateTime @default(now())
+  description   String?
+  note          String?
+  createdAt     DateTime @default(now())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  fromAccountId String
+  fromAccount   Account  @relation("TransferFrom", fields: [fromAccountId], references: [id])
+  toAccountId   String
+  toAccount     Account  @relation("TransferTo", fields: [toAccountId], references: [id])
+
+  @@index([userId, date])
+}
+
+model CategoryBudget {
+  id         String   @id @default(uuid())
+  amountCents Int      @default(0)
+  period     String   @default("MONTHLY")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@unique([userId, categoryId])
+}
+
+model CategoryRule {
+  id         String   @id @default(uuid())
+  name       String
+  pattern    String
+  field      String   @default("DESCRIPTION")
+  matchType  String   @default("CONTAINS")
+  priority   Int      @default(0)
+  isEnabled  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  @@index([userId, isEnabled, priority])
+}
+
+model RecurringSchedule {
+  id          String    @id @default(uuid())
+  name        String
+  amountCents Int       @default(0)
+  description String?
+  note        String?
+  type        String    @default("EXPENSE")
+  frequency   String    @default("MONTHLY")
+  interval    Int       @default(1)
+  nextDate    DateTime
+  endDate     DateTime?
+  autoPost    Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt @default(now())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id])
+  propertyId  String?
+  property    Property? @relation(fields: [propertyId], references: [id])
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
+  accountId   String?
+  account     Account?  @relation(fields: [accountId], references: [id])
+  transactions Transaction[]
+
+  @@index([userId, isActive, nextDate])
+}
+
+model ImportBatch {
+  id           String        @id @default(uuid())
+  filename     String?
+  fileHash     String?
+  source       String        @default("UPLOAD")
+  importedAt   DateTime      @default(now())
+  userId       String
+  user         User          @relation(fields: [userId], references: [id])
+  transactions Transaction[]
+
+  @@index([userId, importedAt])
+  @@unique([userId, fileHash])
+}
+
+model ImportProfile {
+  id                String   @id @default(uuid())
+  name              String
+  dateColumn        String
+  descriptionColumn String
+  amountColumn      String
+  debitColumn       String?
+  creditColumn      String?
+  typeColumn        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt @default(now())
+  userId            String
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, name])
 }
