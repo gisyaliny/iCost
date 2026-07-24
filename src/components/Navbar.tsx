@@ -28,6 +28,7 @@ export function Navbar({ session: serverSession, categories, properties, project
     { href: "/", label: "Transactions", icon: "↕" },
     { href: "/projects", label: "Projects", icon: "📌" },
     { href: "/recurring", label: "Recurring", icon: "⟳" },
+    { href: "/rules", label: "Rules", icon: "✨" },
     { href: "/analysis", label: "Analysis", icon: "▥" },
   ]
 
@@ -73,6 +74,17 @@ export function Navbar({ session: serverSession, categories, properties, project
               Recurring
           </Link>
           <Link
+            href="/rules"
+            className={cn(
+                "px-4 py-2 text-sm font-semibold rounded-full transition-all duration-200",
+                pathname === "/rules"
+                    ? "bg-slate-900 text-white shadow-md shadow-slate-200"
+                    : "text-slate-500 hover:text-slate-900 hover:bg-slate-100"
+            )}
+          >
+              Rules
+          </Link>
+          <Link
             href="/analysis" 
             className={cn(
                 "px-4 py-2 text-sm font-semibold rounded-full transition-all duration-200",
@@ -96,7 +108,7 @@ export function Navbar({ session: serverSession, categories, properties, project
         </div>
       </div>
       {session && (
-        <div className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl md:hidden">
           {navItems.map(item => {
             const active = pathname === item.href
             return (

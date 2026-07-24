@@ -10,6 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:backup": "node scripts/database-bootstrap.mjs",
+    "worker:recurring": "node scripts/recurring-worker.mjs",
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {

@@ -18,6 +18,7 @@ iCost is a powerful, self-hosted family expense tracking application designed fo
 - **Real Schedules**: Daily, weekly, monthly, and yearly schedules post transactions only when they become due instead of filling the database with future records.
 - **Custom End Dates**: Set a termination date for your subscriptions or lease payments.
 - **Schedule Management**: View, edit, pause, resume, and delete recurring schedules from the Recurring module.
+- **Background Generation**: A lightweight container worker checks due schedules independently from page requests; generated history is loaded only when opened.
 
 ### 📂 Smart Statement Import
 - **CSV, OFX & QFX**: Import common bank exports with a complete review step.

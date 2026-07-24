@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma"
 
-function nextOccurrence(current: Date, anchor: Date, frequency: string, interval = 1) {
+export function nextOccurrence(current: Date, anchor: Date, frequency: string, interval = 1) {
   const next = new Date(current)
   if (frequency === "DAILY") next.setUTCDate(next.getUTCDate() + interval)
   else if (frequency === "WEEKLY") next.setUTCDate(next.getUTCDate() + (7 * interval))
@@ -18,13 +18,14 @@ function nextOccurrence(current: Date, anchor: Date, frequency: string, interval
   return next
 }
 
-export async function postDueRecurringTransactions(userId: string) {
+export async function postDueRecurringTransactions(userId?: string) {
   const today = new Date()
   today.setUTCHours(23, 59, 59, 999)
   const schedules = await prisma.recurringSchedule.findMany({
-    where: { userId, isActive: true, autoPost: true, nextDate: { lte: today } },
+    where: { ...(userId ? { userId } : {}), isActive: true, autoPost: true, nextDate: { lte: today } },
     include: { transactions: { orderBy: { date: "asc" }, take: 1, select: { date: true } } },
   })
+  let generatedTotal = 0
 
   for (const schedule of schedules) {
     const anchor = schedule.transactions[0]?.date || schedule.nextDate
@@ -71,6 +72,8 @@ export async function postDueRecurringTransactions(userId: string) {
       if (!result) break
       dueDate = result
       generated += 1
+      generatedTotal += 1
     }
   }
+  return { schedulesChecked: schedules.length, transactionsGenerated: generatedTotal }
 }

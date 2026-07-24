@@ -22,6 +22,7 @@ import { Progress } from "@/components/ui/progress"
 import { CategorySelectorContent } from "./CategorySelectorContent"
 import { formatMoney, roundMoney, sumMoney } from "@/lib/money"
 import { CSVMapping, detectCSVMapping, EMPTY_CSV_MAPPING, ImportTransaction, mapCSVRows, parseStatementText, statementFileType } from "@/lib/statement-import"
+import Link from "next/link"
 
 const isStatementImport = (source?: string | null) => source === "CSV_IMPORT" || source === "OFX_IMPORT" || source === "QFX_IMPORT"
 
@@ -2182,38 +2183,6 @@ export function ManageCategories({ categories, trigger }: { categories: any[], t
     )
 }
 
-function ManageCategoryRules({ categories, rules, trigger }: { categories: any[], rules: any[], trigger: React.ReactNode }) {
-    async function submit(event: React.FormEvent<HTMLFormElement>) {
-        event.preventDefault()
-        const form = event.currentTarget
-        const result = await addCategoryRule(new FormData(form))
-        if (result.error) return toast.error(result.error)
-        form.reset()
-        toast.success("Rule added")
-    }
-
-    return (
-        <Dialog>
-            <DialogTrigger asChild>{trigger}</DialogTrigger>
-            <DialogContent className="sm:max-w-[560px]">
-                <DialogHeader><DialogTitle>Auto-categorization Rules</DialogTitle><DialogDescription>Rules are applied in priority order when a CSV is imported.</DialogDescription></DialogHeader>
-                <form onSubmit={submit} className="grid gap-3 rounded-2xl bg-slate-50 p-4">
-                    <div className="grid grid-cols-2 gap-3"><Input name="name" placeholder="Rule name" required /><Input name="pattern" placeholder="Description text, e.g. COSTCO" required /></div>
-                    <div className="grid grid-cols-2 gap-3">
-                        <Select name="matchType" defaultValue="CONTAINS"><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="CONTAINS">Contains</SelectItem><SelectItem value="STARTS_WITH">Starts with</SelectItem><SelectItem value="EXACT">Exact match</SelectItem></SelectContent></Select>
-                        <Select name="categoryId" required><SelectTrigger><SelectValue placeholder="Assign category" /></SelectTrigger><SelectContent>{categories.map(category => <SelectItem key={category.id} value={category.id}>{category.icon} {category.name}</SelectItem>)}</SelectContent></Select>
-                    </div>
-                    <Button type="submit">Add Rule</Button>
-                </form>
-                <div className="max-h-64 space-y-2 overflow-y-auto">
-                    {rules.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No rules yet.</p>}
-                    {rules.map(rule => <div key={rule.id} className="flex items-center justify-between rounded-xl border p-3 text-sm"><div><div className="font-semibold">{rule.name}</div><div className="text-xs text-slate-500">{rule.matchType.replaceAll("_", " ")}: “{rule.pattern}”</div></div><span className="rounded-full bg-slate-100 px-2 py-1 text-xs">{rule.category.icon} {rule.category.name}</span></div>)}
-                </div>
-            </DialogContent>
-        </Dialog>
-    )
-}
-
 function ManagePreferences({ settings, trigger }: { settings: any, trigger: React.ReactNode }) {
     const [open, setOpen] = useState(false)
 
@@ -2286,11 +2255,7 @@ export function UserSettings({ session, categories, properties, projects, userSe
                                     </Button>
                                 } 
                             />
-                            <ManageCategoryRules
-                                categories={categories}
-                                rules={categoryRules}
-                                trigger={<Button variant="ghost" className="w-full justify-start text-slate-700 hover:bg-slate-50 rounded-xl gap-3 text-xs font-semibold"><span>✨</span> Auto-categorization Rules</Button>}
-                            />
+                            <Button variant="ghost" asChild className="w-full justify-start text-slate-700 hover:bg-slate-50 rounded-xl gap-3 text-xs font-semibold"><Link href="/rules"><span>✨</span> Categorization Rules ({categoryRules.length})</Link></Button>
                             <ManageProjects
                                 projects={projects}
                                 settings={userSettings}

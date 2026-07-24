@@ -45,6 +45,31 @@ node "$PRISMA_CLI" migrate deploy || {
 }
 echo "✅ Database migrations applied successfully."
 
-# 6. Start the actual server
+# 6. Seed defaults and repair fallback-account links once, at startup.
+echo "🌱 Ensuring default data..."
+node ./scripts/ensure-defaults.mjs || {
+    echo "❌ Default data initialization failed. Startup aborted."
+    exit 1
+}
+
+# 7. Start the recurring worker independently from page requests.
+echo "⏱️ Starting recurring transaction worker..."
+node ./scripts/recurring-worker.mjs &
+WORKER_PID=$!
+
+# 8. Start and supervise the actual server.
 echo "⚡ Starting Next.js Production Server..."
-node server.js
+node server.js &
+SERVER_PID=$!
+
+shutdown() {
+    kill "$SERVER_PID" 2>/dev/null || true
+    kill "$WORKER_PID" 2>/dev/null || true
+}
+
+trap shutdown INT TERM
+wait "$SERVER_PID"
+STATUS=$?
+kill "$WORKER_PID" 2>/dev/null || true
+wait "$WORKER_PID" 2>/dev/null || true
+exit "$STATUS"

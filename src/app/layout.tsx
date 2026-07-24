@@ -8,7 +8,6 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import type { Category, Property } from "@prisma/client";
-import { postDueRecurringTransactions } from "@/lib/recurring";
 import { projectView, settingsView } from "@/lib/finance-view";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -33,7 +32,6 @@ export default async function RootLayout({
   let categoryRules: Array<{ id: string; name: string; pattern: string; matchType: string; category: Category }> = [];
   
   if (session?.user?.id) {
-    await postDueRecurringTransactions(session.user.id);
     categories = await prisma.category.findMany();
     properties = await prisma.property.findMany({
       where: { userId: session.user.id, isArchived: false }

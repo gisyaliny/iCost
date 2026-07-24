@@ -11,6 +11,7 @@ import { createHash } from "node:crypto"
 import { mkdir, readdir, readFile, stat } from "node:fs/promises"
 import path from "node:path"
 import { CSVMapping, parseStatementText, statementFileType } from "@/lib/statement-import"
+import { categoryRuleMatches } from "@/lib/category-rules"
 
 const importedTransactionSchema = z.object({
     amount: z.number().finite().positive(),
@@ -371,10 +372,7 @@ export async function importTransactions(data: unknown[], requestedOptions?: unk
             const description = normalized.description.toLocaleLowerCase()
             const matchingRule = rules.find(rule => {
                 if (rule.category.type !== normalized.type) return false
-                const pattern = rule.pattern.toLocaleLowerCase()
-                if (rule.matchType === "EXACT") return description === pattern
-                if (rule.matchType === "STARTS_WITH") return description.startsWith(pattern)
-                return description.includes(pattern)
+                return categoryRuleMatches(description, rule)
             })
             const { amount: normalizedAmount, ...rest } = normalized
             const requestedCategoryIsValid = normalized.categoryId && categoryTypes.get(normalized.categoryId) === normalized.type
@@ -565,10 +563,74 @@ export async function addCategoryRule(formData: FormData) {
     const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } })
     if (!category) return { error: "Category not found" }
 
+    const highest = await prisma.categoryRule.aggregate({
+        where: { userId: session.user.id },
+        _max: { priority: true },
+    })
     await prisma.categoryRule.create({
-        data: { name, pattern, matchType, categoryId, userId: session.user.id },
+        data: { name, pattern, matchType, categoryId, userId: session.user.id, priority: (highest._max.priority ?? -1) + 1 },
     })
     revalidatePath("/")
+    revalidatePath("/rules")
+    revalidatePath("/", "layout")
+    return { success: true }
+}
+
+export async function updateCategoryRule(id: string, formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const name = (formData.get("name") as string | null)?.trim()
+    const pattern = (formData.get("pattern") as string | null)?.trim()
+    const categoryId = formData.get("categoryId") as string
+    const matchType = (formData.get("matchType") as string | null) || "CONTAINS"
+    if (!name || !pattern || !categoryId) return { error: "Name, pattern, and category are required" }
+    if (!new Set(["CONTAINS", "STARTS_WITH", "EXACT"]).has(matchType)) return { error: "Invalid match type" }
+    const [ownedRule, category] = await Promise.all([
+        prisma.categoryRule.findFirst({ where: { id, userId: session.user.id }, select: { id: true } }),
+        prisma.category.findUnique({ where: { id: categoryId }, select: { id: true } }),
+    ])
+    if (!ownedRule) return { error: "Rule not found" }
+    if (!category) return { error: "Category not found" }
+    await prisma.categoryRule.update({ where: { id }, data: { name, pattern, matchType, categoryId } })
+    revalidatePath("/rules")
+    revalidatePath("/", "layout")
+    return { success: true }
+}
+
+export async function toggleCategoryRule(id: string, isEnabled: boolean) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const result = await prisma.categoryRule.updateMany({ where: { id, userId: session.user.id }, data: { isEnabled } })
+    if (!result.count) return { error: "Rule not found" }
+    revalidatePath("/rules")
+    revalidatePath("/", "layout")
+    return { success: true }
+}
+
+export async function deleteCategoryRule(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const result = await prisma.categoryRule.deleteMany({ where: { id, userId: session.user.id } })
+    if (!result.count) return { error: "Rule not found" }
+    revalidatePath("/rules")
+    revalidatePath("/", "layout")
+    return { success: true }
+}
+
+export async function reorderCategoryRules(requestedIds: string[]) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    const parsed = z.array(z.string().uuid()).max(500).safeParse(requestedIds)
+    if (!parsed.success || new Set(parsed.data).size !== parsed.data.length) return { error: "Invalid rule order" }
+    const owned = await prisma.categoryRule.findMany({ where: { userId: session.user.id }, select: { id: true } })
+    const ownedIds = new Set(owned.map(rule => rule.id))
+    if (parsed.data.length !== owned.length || parsed.data.some(id => !ownedIds.has(id))) return { error: "Rule list changed; refresh and try again" }
+    await prisma.$transaction(parsed.data.map((id, index) => prisma.categoryRule.update({
+        where: { id },
+        data: { priority: parsed.data.length - index },
+    })))
+    revalidatePath("/rules")
+    revalidatePath("/", "layout")
     return { success: true }
 }
 
@@ -823,6 +885,49 @@ export async function archiveProperty(id: string) {
     return { success: true }
 }
 
+export async function createRecurringSchedule(formData: FormData) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+
+    const name = (formData.get("name") as string | null)?.trim()
+    const description = (formData.get("description") as string | null)?.trim() || null
+    const note = (formData.get("note") as string | null)?.trim() || null
+    const amount = roundMoney(Number(formData.get("amount")))
+    const type = formData.get("type") as string
+    const frequency = formData.get("frequency") as string
+    const interval = Number(formData.get("interval") || 1)
+    const nextDate = parseDateInput(formData.get("nextDate") as string | null)
+    const endDateValue = formData.get("endDate") as string | null
+    const endDate = endDateValue ? parseDateInput(endDateValue) : null
+    const categoryId = (formData.get("categoryId") as string | null) || null
+    const propertyValue = formData.get("propertyId") as string | null
+    const projectValue = formData.get("projectId") as string | null
+    const accountValue = formData.get("accountId") as string | null
+    const propertyId = propertyValue && propertyValue !== "NONE" ? propertyValue : null
+    const projectId = projectValue && projectValue !== "NONE" ? projectValue : null
+    const accountId = accountValue && accountValue !== "NONE" ? accountValue : null
+
+    if (!name || name.length > 120 || !Number.isFinite(amount) || amount <= 0) return { error: "Name and a positive amount are required" }
+    if (!new Set(["INCOME", "EXPENSE"]).has(type)) return { error: "Invalid transaction type" }
+    if (!new Set(["DAILY", "WEEKLY", "MONTHLY", "YEARLY"]).has(frequency)) return { error: "Invalid frequency" }
+    if (!Number.isInteger(interval) || interval < 1 || interval > 365) return { error: "Invalid interval" }
+    if (!nextDate || (endDate && endDate < nextDate)) return { error: "Invalid schedule dates" }
+    if (accountId && !await prisma.account.findFirst({ where: { id: accountId, userId: session.user.id, isArchived: false } })) return { error: "Account not found" }
+    if (projectId && !await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id, isArchived: false } })) return { error: "Project not found" }
+    if (propertyId && !await prisma.property.findFirst({ where: { id: propertyId, userId: session.user.id, isArchived: false } })) return { error: "Property not found" }
+    if (categoryId && !await prisma.category.findFirst({ where: { id: categoryId, type, isArchived: false } })) return { error: "Category does not match the transaction type" }
+
+    await prisma.recurringSchedule.create({
+        data: {
+            name, description, note, amountCents: toCents(amount), type, frequency, interval,
+            nextDate, endDate, autoPost: true, isActive: true, userId: session.user.id,
+            categoryId, propertyId, projectId, accountId,
+        },
+    })
+    revalidatePath("/recurring")
+    return { success: true }
+}
+
 export async function updateRecurringSchedule(id: string, formData: FormData) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.id) return { error: "Unauthorized" }
@@ -856,6 +961,7 @@ export async function updateRecurringSchedule(id: string, formData: FormData) {
     if (accountId && !await prisma.account.findFirst({ where: { id: accountId, userId: session.user.id, isArchived: false } })) return { error: "Account not found" }
     if (projectId && !await prisma.project.findFirst({ where: { id: projectId, userId: session.user.id, isArchived: false } })) return { error: "Project not found" }
     if (propertyId && !await prisma.property.findFirst({ where: { id: propertyId, userId: session.user.id, isArchived: false } })) return { error: "Property not found" }
+    if (categoryId && !await prisma.category.findFirst({ where: { id: categoryId, type, isArchived: false } })) return { error: "Category does not match the transaction type" }
 
     await prisma.recurringSchedule.update({
         where: { id },
@@ -885,6 +991,48 @@ export async function deleteRecurringSchedule(id: string) {
     ])
     revalidatePath("/recurring")
     return { success: true }
+}
+
+export async function getRecurringScheduleHistory(id: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Unauthorized" }
+    if (!z.string().uuid().safeParse(id).success) return { error: "Invalid schedule" }
+
+    const schedule = await prisma.recurringSchedule.findFirst({
+        where: { id, userId: session.user.id },
+        select: { id: true },
+    })
+    if (!schedule) return { error: "Schedule not found" }
+
+    const [rows, total] = await Promise.all([
+        prisma.transaction.findMany({
+            where: { recurringScheduleId: id, userId: session.user.id },
+            orderBy: { date: "desc" },
+            take: 50,
+            select: {
+                id: true,
+                amountCents: true,
+                description: true,
+                date: true,
+                type: true,
+                category: { select: { name: true } },
+            },
+        }),
+        prisma.transaction.count({ where: { recurringScheduleId: id, userId: session.user.id } }),
+    ])
+
+    return {
+        success: true,
+        total,
+        transactions: rows.map(row => ({
+            id: row.id,
+            amount: fromCents(row.amountCents),
+            description: row.description,
+            date: row.date.toISOString(),
+            type: row.type,
+            category: row.category,
+        })),
+    }
 }
 
 export async function resetAllData() {

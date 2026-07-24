@@ -13,6 +13,7 @@ services:
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?Set NEXTAUTH_SECRET in the NAS .env file}
       NEXTAUTH_URL: ${NEXTAUTH_URL:?Set NEXTAUTH_URL in the NAS .env file}
       IMPORT_INBOX_DIR: /app/imports
+      RECURRING_POLL_INTERVAL_MS: ${RECURRING_POLL_INTERVAL_MS:-60000}
       TZ: ${TZ:-America/New_York}
     volumes:
       - ${ICOST_DATABASE_DIR:-./database}:/app/database
