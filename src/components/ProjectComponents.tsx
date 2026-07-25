@@ -74,19 +74,19 @@ export function ProjectsModule({ projects, settings }: { projects: any[]; settin
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 sm:space-y-8">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div><h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Projects</h1><p className="mt-1 text-slate-500">Plan, organize, and measure one-off household spending.</p></div>
-        <div className="flex gap-2">
+        <div><h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Projects</h1><p className="mt-0.5 text-sm text-slate-500 sm:mt-1 sm:text-base">Plan, organize, and measure one-off household spending.</p></div>
+        <div className="grid grid-cols-2 gap-2 sm:flex">
           <Button variant="outline" asChild><Link href="/">Assign Transactions</Link></Button>
           <ProjectForm trigger={<Button>Create Project +</Button>} />
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card><CardHeader><CardDescription>Active Projects</CardDescription><CardTitle className="text-3xl">{projects.length}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Combined Net Cost</CardDescription><CardTitle className="text-3xl">{money(totalCost)}</CardTitle></CardHeader></Card>
-        <Card><CardHeader><CardDescription>Combined Budget · {overBudget} over</CardDescription><CardTitle className="text-3xl">{money(totalBudget)}</CardTitle></CardHeader></Card>
+      <div className="grid grid-cols-3 gap-2 md:gap-4">
+        <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Active</CardDescription><CardTitle className="truncate text-lg sm:text-3xl">{projects.length}</CardTitle></CardHeader></Card>
+        <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Net Cost</CardDescription><CardTitle className="truncate text-sm sm:text-3xl">{money(totalCost)}</CardTitle></CardHeader></Card>
+        <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Budget · {overBudget} over</CardDescription><CardTitle className="truncate text-sm sm:text-3xl">{money(totalBudget)}</CardTitle></CardHeader></Card>
       </div>
 
       {projectStats.length === 0 ? (
@@ -97,13 +97,13 @@ export function ProjectsModule({ projects, settings }: { projects: any[]; settin
             const progress = project.budget && project.budget > 0 ? (project.netCost / project.budget) * 100 : 0
             return (
               <Card key={project.id} className="overflow-hidden border-0 shadow-lg">
-                <CardHeader className="border-b bg-slate-50/70">
-                  <div className="flex items-start justify-between gap-4">
+                <CardHeader className="border-b bg-slate-50/70 p-4 sm:p-6">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                     <div><CardTitle className="text-xl">📌 {project.name}</CardTitle><CardDescription className="mt-1">{project.description || "No description"}</CardDescription></div>
-                    <div className="flex gap-1"><ProjectForm project={project} trigger={<Button size="sm" variant="outline">Edit</Button>} /><Button size="sm" variant="ghost" className="text-rose-600" onClick={() => archive(project.id, project.name)}>Archive</Button></div>
+                    <div className="flex gap-1 self-end sm:self-auto"><ProjectForm project={project} trigger={<Button size="sm" variant="outline">Edit</Button>} /><Button size="sm" variant="ghost" className="text-rose-600" onClick={() => archive(project.id, project.name)}>Archive</Button></div>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-5 pt-5">
+                <CardContent className="space-y-5 p-4 sm:p-6 sm:pt-5">
                   <div className="grid grid-cols-3 gap-3 text-sm"><div><div className="text-xs text-slate-400">Expenses</div><div className="font-bold text-rose-600">{money(project.expenses)}</div></div><div><div className="text-xs text-slate-400">Income</div><div className="font-bold text-emerald-600">{money(project.income)}</div></div><div><div className="text-xs text-slate-400">Net Cost</div><div className="font-bold">{money(project.netCost)}</div></div></div>
                   {project.budget !== null && <div className="space-y-2"><div className="flex justify-between text-xs font-semibold"><span>Budget usage</span><span className={cn(progress > 100 && "text-rose-600")}>{money(project.netCost)} / {money(project.budget)}</span></div><Progress value={Math.min(Math.max(progress, 0), 100)} /><div className="text-right text-xs text-slate-400">{progress.toFixed(0)}%</div></div>}
                   <div className="flex flex-wrap gap-3 text-xs text-slate-500"><span>{project.transactions.length} transactions</span>{project.startDate && <span>Starts {new Date(project.startDate).toLocaleDateString()}</span>}{project.endDate && <span>Ends {new Date(project.endDate).toLocaleDateString()}</span>}</div>

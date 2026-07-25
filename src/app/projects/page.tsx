@@ -25,5 +25,5 @@ export default async function ProjectsPage() {
     transactions: project.transactions.map(transactionView),
   }))
 
-  return <div className="mx-auto mt-8 max-w-7xl px-4 pb-20"><ProjectsModule projects={projects} settings={settings} /></div>
+  return <div className="mx-auto mt-3 max-w-7xl px-3 pb-28 sm:mt-8 sm:px-4 sm:pb-20"><ProjectsModule projects={projects} settings={settings} /></div>
 }

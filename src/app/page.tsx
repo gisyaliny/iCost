@@ -38,13 +38,13 @@ export default async function Home() {
   })
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-20 mt-8 px-4">
+    <div className="mx-auto mt-3 max-w-7xl space-y-4 px-3 pb-28 sm:mt-8 sm:space-y-8 sm:px-4 sm:pb-20">
       <div className="flex md:flex-row flex-col justify-between md:items-center gap-4">
           <div>
-               <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Dashboard</h1>
-               <p className="text-slate-500 mt-1">Welcome back, {session.user.name}!</p>
+               <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Dashboard</h1>
+               <p className="mt-0.5 text-sm text-slate-500 sm:mt-1 sm:text-base">Welcome back, {session.user.name}!</p>
           </div>
-          <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-2">
             <CSVImport existingTransactions={transactions} settings={userSettings} importProfiles={importProfiles} categories={categories} />
             <AddTransactionButton categories={categories} properties={properties} projects={projects} accounts={accounts} transactions={transactions} settings={userSettings} />
           </div>

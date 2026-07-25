@@ -27,5 +27,5 @@ export default async function RecurringPage() {
     prisma.user.findUnique({ where: { id: session.user.id }, select: { monthlyBudgetCents: true, currency: true, locale: true, timezone: true } }),
   ])
   const schedules = rows.map(recurringView)
-  return <div className="mx-auto mt-8 max-w-7xl px-4 pb-24"><RecurringModule schedules={schedules} categories={categories} properties={properties} projects={projectRows.map(projectView)} accounts={accounts} settings={settingsRow ? settingsView(settingsRow) : null} /></div>
+  return <div className="mx-auto mt-3 max-w-7xl px-3 pb-28 sm:mt-8 sm:px-4 sm:pb-24"><RecurringModule schedules={schedules} categories={categories} properties={properties} projects={projectRows.map(projectView)} accounts={accounts} settings={settingsRow ? settingsView(settingsRow) : null} /></div>
 }

@@ -99,29 +99,29 @@ export function CategoryRulesModule({ initialRules, categories }: { initialRules
     toast.success("Rule deleted")
   }
 
-  return <div className="space-y-8">
+  return <div className="space-y-5 sm:space-y-8">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-      <div><h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Categorization Rules</h1><p className="mt-1 text-slate-500">Automatically categorize imported CSV, OFX, and QFX transactions.</p></div>
-      <RuleDialog categories={categories} trigger={<Button className="rounded-full bg-indigo-600 px-6 hover:bg-indigo-700">Add Rule +</Button>} />
+      <div><h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Categorization Rules</h1><p className="mt-0.5 text-sm text-slate-500 sm:mt-1 sm:text-base">Automatically categorize imported CSV, OFX, and QFX transactions.</p></div>
+      <RuleDialog categories={categories} trigger={<Button className="w-full rounded-xl bg-indigo-600 px-6 hover:bg-indigo-700 sm:w-auto sm:rounded-full">Add Rule +</Button>} />
     </div>
 
-    <div className="grid gap-4 md:grid-cols-3">
-      <Card><CardHeader><CardDescription>Total rules</CardDescription><CardTitle className="text-3xl">{rules.length}</CardTitle></CardHeader></Card>
-      <Card><CardHeader><CardDescription>Enabled</CardDescription><CardTitle className="text-3xl text-emerald-600">{rules.filter(rule => rule.isEnabled).length}</CardTitle></CardHeader></Card>
-      <Card><CardHeader><CardDescription>Disabled</CardDescription><CardTitle className="text-3xl text-amber-600">{rules.filter(rule => !rule.isEnabled).length}</CardTitle></CardHeader></Card>
+    <div className="grid grid-cols-3 gap-2 md:gap-4">
+      <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Total</CardDescription><CardTitle className="text-xl sm:text-3xl">{rules.length}</CardTitle></CardHeader></Card>
+      <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Enabled</CardDescription><CardTitle className="text-xl text-emerald-600 sm:text-3xl">{rules.filter(rule => rule.isEnabled).length}</CardTitle></CardHeader></Card>
+      <Card className="rounded-2xl"><CardHeader className="p-3 sm:p-6"><CardDescription className="text-[10px] sm:text-sm">Disabled</CardDescription><CardTitle className="text-xl text-amber-600 sm:text-3xl">{rules.filter(rule => !rule.isEnabled).length}</CardTitle></CardHeader></Card>
     </div>
 
     <Card className="border-indigo-100 bg-gradient-to-br from-indigo-50 to-white shadow-md">
-      <CardHeader><CardTitle>Test a description</CardTitle><CardDescription>Type exactly what appears on a bank statement. Testing does not change any transactions.</CardDescription></CardHeader>
-      <CardContent className="space-y-4">
+      <CardHeader className="p-4 sm:p-6"><CardTitle>Test a description</CardTitle><CardDescription>Type exactly what appears on a bank statement. Testing does not change any transactions.</CardDescription></CardHeader>
+      <CardContent className="space-y-4 p-4 pt-0 sm:p-6 sm:pt-0">
         <Input value={testDescription} onChange={event => setTestDescription(event.target.value)} placeholder="Example: COSTCO WHSE #1234" className="h-12 bg-white text-base" />
         {!testDescription.trim() ? <p className="text-sm text-slate-500">Enter a description to preview matching.</p> : matches.length ? <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4"><p className="text-xs font-bold uppercase text-emerald-700">Winning rule</p><p className="mt-1 font-black text-emerald-950">{matches[0].name} → {matches[0].category.icon} {matches[0].category.name}</p>{matches.length > 1 && <p className="mt-2 text-xs text-emerald-700">{matches.length - 1} lower-priority rule(s) also match but will not be used.</p>}</div> : <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-800">No enabled rule matches this description.</div>}
       </CardContent>
     </Card>
 
     <Card className="border-0 shadow-lg">
-      <CardHeader><CardTitle>Priority order</CardTitle><CardDescription>Top rules run first. Drag a rule, or use the arrow buttons for keyboard-friendly ordering.</CardDescription></CardHeader>
-      <CardContent className="space-y-3">
+      <CardHeader className="p-4 sm:p-6"><CardTitle>Priority order</CardTitle><CardDescription>Top rules run first. Drag a rule, or use the arrow buttons for keyboard-friendly ordering.</CardDescription></CardHeader>
+      <CardContent className="space-y-3 p-3 pt-0 sm:p-6 sm:pt-0">
         {rules.map((rule, index) => <div
           key={rule.id}
           draggable
@@ -136,7 +136,7 @@ export function CategoryRulesModule({ initialRules, categories }: { initialRules
             <div className="flex flex-wrap items-center gap-2"><p className="font-bold text-slate-900">{rule.name}</p><span className={cn("rounded-full px-2 py-0.5 text-[10px] font-black", rule.isEnabled ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-600")}>{rule.isEnabled ? "ENABLED" : "DISABLED"}</span></div>
             <p className="mt-1 text-sm text-slate-600">{rule.matchType.replaceAll("_", " ")} “{rule.pattern}” → <span className="font-semibold">{rule.category.icon} {rule.category.name}</span></p>
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="grid grid-cols-5 gap-1 sm:flex sm:flex-wrap">
             <Button size="sm" variant="ghost" disabled={index === 0} onClick={() => move(rule.id, -1)} title="Move up">↑</Button>
             <Button size="sm" variant="ghost" disabled={index === rules.length - 1} onClick={() => move(rule.id, 1)} title="Move down">↓</Button>
             <Button size="sm" variant="outline" onClick={() => toggle(rule)}>{rule.isEnabled ? "Disable" : "Enable"}</Button>

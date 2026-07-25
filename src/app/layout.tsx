@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
@@ -16,6 +16,12 @@ export const metadata: Metadata = {
   title: "iCost - Family Expense Tracker",
   description: "Track your family expenses easily.",
   applicationName: "iCost",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
@@ -58,7 +64,7 @@ export default async function RootLayout({
       <body className={inter.className}>
         <Providers>
           <Navbar session={session} categories={categories} properties={properties} projects={projects} userSettings={userSettings} categoryRules={categoryRules} />
-          <main className="container mx-auto p-4">
+          <main className="container mx-auto px-0 py-3 sm:p-4">
              {children}
           </main>
           <Toaster position="top-center" richColors />

@@ -106,24 +106,24 @@ export function SummaryCards({ transactions, settings }: { transactions: any[], 
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <Card className="bg-white shadow-lg border-0 animate-slide-up overflow-hidden">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Income</CardTitle>
-          <div className="text-emerald-500 bg-emerald-50 p-1.5 rounded-full">↑</div>
+    <div className="grid grid-cols-3 gap-2 md:gap-6">
+      <Card className="animate-slide-up overflow-hidden rounded-2xl border-0 bg-white shadow-sm md:shadow-lg">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-1 md:p-6 md:pb-2">
+          <CardTitle className="text-[10px] font-bold uppercase tracking-wide text-slate-500 md:text-sm md:font-medium md:tracking-wider"><span className="md:hidden">Income</span><span className="hidden md:inline">Total Income</span></CardTitle>
+          <div className="hidden rounded-full bg-emerald-50 p-1.5 text-emerald-500 md:block">↑</div>
         </CardHeader>
-        <CardContent>
-          <div className="text-3xl font-black text-emerald-600">{money(income)}</div>
+        <CardContent className="p-3 pt-1 md:p-6 md:pt-0">
+          <div className="truncate text-sm font-black text-emerald-600 sm:text-lg md:text-3xl">{money(income)}</div>
         </CardContent>
       </Card>
-      <Card className="bg-white shadow-lg border-0 animate-slide-up overflow-hidden" style={{ animationDelay: '0.1s' }}>
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wider">Total Expenses</CardTitle>
-          <div className="text-rose-500 bg-rose-50 p-1.5 rounded-full">↓</div>
+      <Card className="animate-slide-up overflow-hidden rounded-2xl border-0 bg-white shadow-sm md:shadow-lg" style={{ animationDelay: '0.1s' }}>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-1 md:p-6 md:pb-2">
+          <CardTitle className="text-[10px] font-bold uppercase tracking-wide text-slate-500 md:text-sm md:font-medium md:tracking-wider"><span className="md:hidden">Expenses</span><span className="hidden md:inline">Total Expenses</span></CardTitle>
+          <div className="hidden rounded-full bg-rose-50 p-1.5 text-rose-500 md:block">↓</div>
         </CardHeader>
-        <CardContent>
-          <div className="text-3xl font-black text-rose-600">{money(expense)}</div>
-          <div className="mt-4 space-y-2">
+        <CardContent className="p-3 pt-1 md:p-6 md:pt-0">
+          <div className="truncate text-sm font-black text-rose-600 sm:text-lg md:text-3xl">{money(expense)}</div>
+          <div className="mt-4 hidden space-y-2 md:block">
               <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
                   <span>Monthly Budget</span>
                   <span onClick={() => setIsEditingBudget(true)} className="cursor-pointer hover:text-slate-600">
@@ -144,12 +144,12 @@ export function SummaryCards({ transactions, settings }: { transactions: any[], 
           </div>
         </CardContent>
       </Card>
-      <Card className="bg-white shadow-lg border-0 animate-slide-up overflow-hidden">
-         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-slate-500 uppercase tracking-wider">Net Cash Flow</CardTitle>
+      <Card className="animate-slide-up overflow-hidden rounded-2xl border-0 bg-slate-900 text-white shadow-sm md:bg-white md:text-slate-900 md:shadow-lg">
+         <CardHeader className="flex flex-row items-center justify-between space-y-0 p-3 pb-1 md:p-6 md:pb-2">
+          <CardTitle className="text-[10px] font-bold uppercase tracking-wide text-slate-300 md:text-sm md:font-medium md:tracking-wider md:text-slate-500"><span className="md:hidden">Net</span><span className="hidden md:inline">Net Cash Flow</span></CardTitle>
         </CardHeader>
-        <CardContent>
-          <div className={cn("text-3xl font-black", balance >= 0 ? "text-slate-900" : "text-rose-600")}>
+        <CardContent className="p-3 pt-1 md:p-6 md:pt-0">
+          <div className={cn("truncate text-sm font-black sm:text-lg md:text-3xl", balance >= 0 ? "text-white md:text-slate-900" : "text-rose-400 md:text-rose-600")}>
               {money(balance)}
           </div>
         </CardContent>
@@ -180,15 +180,15 @@ export function AccountsOverview({ accounts, settings }: { accounts: any[], sett
   }
 
   return (
-    <Card className="border-0 shadow-lg">
-      <CardHeader className="flex flex-row items-center justify-between gap-4">
+    <Card className="rounded-2xl border-0 shadow-sm md:shadow-lg">
+      <CardHeader className="flex flex-row items-center justify-between gap-3 p-4 md:p-6">
         <div>
           <CardTitle>Accounts</CardTitle>
           <CardDescription>Total balance {displayMoney(totalBalance, settings)}</CardDescription>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
-            <DialogTrigger asChild><Button variant="outline" disabled={accounts.length < 2}>Transfer</Button></DialogTrigger>
+            <DialogTrigger asChild><Button size="sm" variant="outline" disabled={accounts.length < 2}>Transfer</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Record Transfer</DialogTitle><DialogDescription>Transfers move money between accounts and do not affect income or expenses.</DialogDescription></DialogHeader>
               <form onSubmit={submitTransfer} className="grid gap-4">
@@ -206,7 +206,7 @@ export function AccountsOverview({ accounts, settings }: { accounts: any[], sett
             </DialogContent>
           </Dialog>
           <Dialog open={accountOpen} onOpenChange={setAccountOpen}>
-            <DialogTrigger asChild><Button>Add Account</Button></DialogTrigger>
+            <DialogTrigger asChild><Button size="sm">Add</Button></DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Add Account</DialogTitle><DialogDescription>Add cash, bank, card, or investment accounts.</DialogDescription></DialogHeader>
               <form onSubmit={submitAccount} className="grid gap-4">
@@ -219,9 +219,9 @@ export function AccountsOverview({ accounts, settings }: { accounts: any[], sett
           </Dialog>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <CardContent className="flex gap-3 overflow-x-auto px-4 pb-4 md:grid md:grid-cols-2 md:px-6 md:pb-6 lg:grid-cols-3">
         {accounts.map(account => (
-          <div key={account.id} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+          <div key={account.id} className="min-w-[220px] rounded-xl border border-slate-100 bg-slate-50 p-4 md:min-w-0">
             <div className="flex items-center justify-between gap-3"><span className="font-semibold text-slate-800">{account.name}</span><span className="text-[10px] font-bold text-slate-400">{account.type.replaceAll("_", " ")}</span></div>
             <div className={cn("mt-2 text-xl font-black", account.balance < 0 ? "text-rose-600" : "text-slate-900")}>{displayMoney(account.balance, settings)}</div>
           </div>
@@ -322,7 +322,7 @@ export function TransactionDashboard({ transactions, categories, properties, pro
     const pendingExpense = sumMoney(pendingReview.filter(transaction => transaction.type === "EXPENSE").map(transaction => transaction.amount))
 
     return (
-        <div className="space-y-8">
+        <div className="space-y-4 md:space-y-8">
             {pendingReview.length > 0 && (
                 <div role="alert" className="rounded-2xl border-2 border-amber-300 bg-amber-50 px-5 py-4 text-amber-950 shadow-sm">
                     <div className="flex items-start gap-3"><span className="text-2xl">⚠️</span><div><p className="font-black">{pendingReview.length} imported transaction(s) are excluded from all official totals</p><p className="mt-1 text-sm font-medium">Waiting for approval: {displayMoney(pendingIncome, settings)} Money In and {displayMoney(pendingExpense, settings)} Money Out. Open Review Inbox, correct the direction/category, then approve them.</p></div></div>
@@ -605,17 +605,17 @@ export function TransactionList({
     const visiblePages = Array.from({ length: Math.min(totalPages, 5) }, (_, index) => firstVisiblePage + index)
 
   return (
-    <Card className="shadow-xl border-0 overflow-hidden animate-slide-up">
+    <Card className="animate-slide-up overflow-hidden rounded-2xl border-0 shadow-sm md:shadow-xl">
         {/* ... (Header content skipped for brevity, keeping existing structure) ... */}
-        <CardHeader className="bg-slate-50/50 p-6">
-            <div className="flex flex-col gap-6">
+        <CardHeader className="bg-slate-50/50 p-4 md:p-6">
+            <div className="flex flex-col gap-4 md:gap-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                     <div className="flex flex-col gap-1">
                         <CardTitle className="text-2xl font-bold text-slate-900 tracking-tight">Transactions</CardTitle>
                         <CardDescription className="text-slate-500 font-medium">{filtered.length} matching / {dateFilteredCount} in period</CardDescription>
                     </div>
                     
-                    <div className="flex flex-wrap gap-2 items-center">
+                    <div className="-mx-1 flex items-center gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-wrap md:overflow-visible md:px-0 md:pb-0 [&>*]:shrink-0">
                         {selectedIds.size > 0 && (
                             <>
                                 <Button variant="outline" size="sm" onClick={handleMarkReviewed} className="h-9 text-emerald-700">Approve {selectedIds.size}</Button>
@@ -644,7 +644,7 @@ export function TransactionList({
                         <Button variant="outline" size="sm" onClick={handleExport} className="h-9 gap-2 shadow-sm bg-white">
                             <span>📤</span> Export CSV
                         </Button>
-                        <RemoveDuplicatesDialog transactions={transactions} settings={settings} />
+                        <div className="shrink-0"><RemoveDuplicatesDialog transactions={transactions} settings={settings} /></div>
                     </div>
                 </div>
 
@@ -655,7 +655,7 @@ export function TransactionList({
                     </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 pt-4 border-t border-slate-200/60">
+                <div className="grid grid-cols-1 gap-2 border-t border-slate-200/60 pt-3 md:grid-cols-12 md:gap-3 md:pt-4">
                     <div className="md:col-span-5 relative group">
                         <Input 
                             placeholder="Search description or note..."
@@ -683,7 +683,7 @@ export function TransactionList({
                                     <span className="text-slate-400">▼</span>
                                 </Button>
                             </PopoverTrigger>
-                            <PopoverContent className="w-[340px] p-4 rounded-3xl shadow-2xl border-0" align="end">
+                            <PopoverContent className="w-[min(340px,calc(100vw-2rem))] rounded-3xl border-0 p-4 shadow-2xl" align="end">
                                 <CategorySelectorContent 
                                     categories={categories} 
                                     selectedCategories={selectedCategories} 
@@ -696,7 +696,55 @@ export function TransactionList({
                 </div>
             </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-0 md:p-6">
+        <div className="divide-y divide-slate-100 md:hidden">
+          {paginatedTransactions.length === 0 ? (
+            <div className="px-4 py-16 text-center text-sm text-slate-400">No transactions found in this period</div>
+          ) : paginatedTransactions.map((t: any) => (
+            <article key={t.id} className={cn("relative px-4 py-4", selectedIds.has(t.id) && "bg-indigo-50/60", !t.reviewed && "border-l-4 border-l-amber-400 bg-amber-50/30")}>
+              <div className="flex items-start gap-3">
+                <Checkbox className="mt-1" checked={selectedIds.has(t.id)} onCheckedChange={() => toggleSelect(t.id)} aria-label={`Select ${t.description || "transaction"}`} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[15px] font-bold text-slate-900">{t.description || "No description"}</p>
+                      <p className="mt-0.5 text-xs text-slate-400">{formatDate(t.date)} · {t.category?.icon} {t.category?.name || "Uncategorized"}</p>
+                    </div>
+                    <p className={cn("shrink-0 text-[15px] font-black", t.type === "INCOME" ? "text-emerald-600" : "text-rose-600")}>{t.type === "INCOME" ? "+" : "-"}{displayMoney(t.amount, settings)}</p>
+                  </div>
+                  {t.note && <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-500">{t.note}</p>}
+                  <div className="mt-2 flex flex-wrap items-center gap-1">
+                    {t.project && <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[10px] text-violet-700">📌 {t.project.name}</span>}
+                    {t.account && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-600">{t.account.name}</span>}
+                    {isStatementImport(t.source) && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-600">IMPORTED</span>}
+                    {!t.reviewed && <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">NEEDS REVIEW</span>}
+                  </div>
+                  {!t.reviewed && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-white p-2.5">
+                      <p className="mb-2 text-[11px] leading-snug text-amber-800">{t.reviewReason || "Confirm the money direction and category before approval."}</p>
+                      <div className="flex gap-2">
+                        <Select value={t.type} onValueChange={value => handleReviewType(t.id, value as "INCOME" | "EXPENSE")}>
+                          <SelectTrigger className={cn("h-9 flex-1 font-bold", t.type === "INCOME" ? "border-emerald-300 text-emerald-700" : "border-rose-300 text-rose-700")}><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="EXPENSE">↓ Money Out</SelectItem><SelectItem value="INCOME">↑ Money In</SelectItem></SelectContent>
+                        </Select>
+                        <Button size="sm" className="h-9 bg-emerald-600 px-4 hover:bg-emerald-700" onClick={() => handleReviewType(t.id, t.type, true)}>Approve</Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2 flex justify-end gap-1">
+                    <EditTransactionDialog transaction={t} categories={categories} properties={properties} projects={projects} accounts={accounts} settings={settings} uniqueDescriptions={uniqueDescriptions}>
+                      <Button variant="ghost" size="sm" className="h-8 px-3 text-xs text-indigo-600">Edit</Button>
+                    </EditTransactionDialog>
+                    <DeleteTransactionDialog onDelete={() => handleDelete(t.id)}>
+                      <Button variant="ghost" size="sm" className="h-8 px-3 text-xs text-rose-600">Delete</Button>
+                    </DeleteTransactionDialog>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+        <div className="hidden md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -861,6 +909,7 @@ export function TransactionList({
             ))}
           </TableBody>
         </Table>
+        </div>
         <datalist id="descriptions-list-inline">
             {uniqueDescriptions.map((desc: any) => (
                 <option key={desc} value={desc} />
@@ -868,8 +917,8 @@ export function TransactionList({
         </datalist>
       </CardContent>
 
-      <div className="p-4 border-t bg-slate-50/30 flex items-center justify-between">
-          <div className="flex items-center gap-4 text-sm text-slate-500">
+      <div className="flex items-center justify-between gap-2 border-t bg-slate-50/30 p-3 md:p-4">
+          <div className="hidden items-center gap-4 text-sm text-slate-500 md:flex">
               <div className="flex items-center gap-2">
                   <span>Show</span>
                   <Select value={pageSize.toString()} onValueChange={(val) => { setPageSize(parseInt(val)); setCurrentPage(1); }}>
@@ -888,7 +937,8 @@ export function TransactionList({
               <span className="hidden sm:inline">Showing {Math.min(filtered.length, (safeCurrentPage-1)*pageSize + 1)}-{Math.min(filtered.length, safeCurrentPage*pageSize)} of {filtered.length}</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500 md:hidden">Page {safeCurrentPage} of {totalPages}</span>
+          <div className="flex items-center gap-1.5 md:gap-2">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -898,7 +948,7 @@ export function TransactionList({
               >
                   Prev
               </Button>
-              <div className="flex items-center gap-1">
+              <div className="hidden items-center gap-1 md:flex">
                   {visiblePages.map((page) => (
                       <Button 
                         key={page}
@@ -969,7 +1019,7 @@ export function AddTransactionButton({ categories, properties, projects, account
         if (!val) setTimeout(reset, 300)
     }}>
       <DialogTrigger asChild>
-        <Button size="lg" className="rounded-full shadow-lg bg-indigo-600 hover:bg-indigo-700">Add Transaction +</Button>
+        <Button size="lg" aria-label="Add transaction" className="fixed right-4 bottom-[calc(4.9rem+env(safe-area-inset-bottom))] z-40 h-14 w-14 rounded-full bg-indigo-600 p-0 text-2xl shadow-xl shadow-indigo-300/50 hover:bg-indigo-700 sm:static sm:h-11 sm:w-auto sm:px-5 sm:text-sm sm:shadow-lg"><span className="sm:hidden">+</span><span className="hidden sm:inline">Add Transaction +</span></Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <TransactionForm 
@@ -1392,24 +1442,24 @@ export function AnalysisCharts({ transactions, categories, properties, projects,
     }).filter(project => project.count > 0).sort((a, b) => b.expense - a.expense), [filteredTransactions, projects])
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
             <SummaryCards transactions={filteredTransactions} settings={settings} />
 
-            <div className="flex flex-col xl:flex-row justify-between xl:items-center gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <div className="flex flex-col gap-4 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:p-6 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex flex-col gap-1">
                     <CardTitle className="text-2xl font-black text-slate-900 tracking-tight">Analysis & Insights</CardTitle>
                     <p className="text-slate-500 text-sm font-medium">{filteredTransactions.length} records in selection</p>
                 </div>
 
-                <div className="flex flex-wrap gap-3 items-center">
+                <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:gap-3">
                     {/* View Mode Switcher */}
-                    <div className="flex border border-slate-200 rounded-xl p-1 bg-slate-50 shadow-inner">
+                    <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 shadow-inner">
                         {(['daily', 'weekly', 'monthly'] as const).map(mode => (
                             <Button 
                                 key={mode} 
                                 variant={viewMode === mode ? "default" : "ghost"} 
                                 size="sm" 
-                                className={cn("h-8 capitalize px-4 rounded-lg transition-all", viewMode === mode ? "shadow-sm bg-white text-slate-900 hover:bg-white" : "text-slate-500")}
+                                className={cn("h-8 flex-1 rounded-lg px-3 capitalize transition-all sm:flex-none sm:px-4", viewMode === mode ? "bg-white text-slate-900 shadow-sm hover:bg-white" : "text-slate-500")}
                                 onClick={() => setViewMode(mode)}
                             >
                                 {mode}
@@ -1418,20 +1468,20 @@ export function AnalysisCharts({ transactions, categories, properties, projects,
                     </div>
 
                     {/* Date Range Selection */}
-                    <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-1.5 shadow-inner">
-                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border-0 h-7 p-0 text-xs font-bold focus-visible:ring-0 bg-transparent w-28" />
+                    <div className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 shadow-inner sm:w-auto sm:px-4">
+                        <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-xs font-bold focus-visible:ring-0 sm:w-28 sm:flex-none" />
                         <span className="text-slate-400 font-bold">→</span>
-                        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="border-0 h-7 p-0 text-xs font-bold focus-visible:ring-0 bg-transparent w-28" />
+                        <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="h-7 min-w-0 flex-1 border-0 bg-transparent p-0 text-xs font-bold focus-visible:ring-0 sm:w-28 sm:flex-none" />
                     </div>
 
                     {/* Category Multi-Select Checkboxes (Box Style) */}
                     <Popover>
                         <PopoverTrigger asChild>
-                            <Button variant="outline" className="h-10 px-4 gap-2 rounded-xl border-slate-200 hover:bg-slate-50 font-semibold shadow-sm">
+                            <Button variant="outline" className="h-10 w-full gap-2 rounded-xl border-slate-200 px-4 font-semibold shadow-sm hover:bg-slate-50 sm:w-auto">
                                 <span>📂</span> Categories ({selectedCategories.size})
                             </Button>
                         </PopoverTrigger>
-                        <PopoverContent className="w-[320px] p-4 rounded-3xl shadow-2xl border-0" align="end">
+                        <PopoverContent className="w-[min(320px,calc(100vw-2rem))] rounded-3xl border-0 p-4 shadow-2xl" align="end">
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Filter by category</span>
@@ -1471,16 +1521,16 @@ export function AnalysisCharts({ transactions, categories, properties, projects,
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Time Trend with Trend Line */}
-                <Card className="shadow-lg border-0 animate-slide-up md:col-span-2" style={{ animationDelay: '0.1s' }}>
-                    <CardHeader className="flex flex-row items-center justify-between">
+                <Card className="min-w-0 animate-slide-up border-0 shadow-lg md:col-span-2" style={{ animationDelay: '0.1s' }}>
+                    <CardHeader className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
                         <CardTitle className="text-sm font-medium text-slate-500 uppercase">{viewMode} trend & performance</CardTitle>
-                        <div className="flex items-center gap-4 text-xs font-semibold">
+                        <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold sm:gap-4 sm:text-xs">
                             <div className="flex items-center gap-1"><span className="w-3 h-3 bg-emerald-500 rounded-sm" /> Income</div>
                             <div className="flex items-center gap-1"><span className="w-3 h-3 bg-rose-500 rounded-sm" /> Expense</div>
                             <div className="flex items-center gap-1"><span className="w-3 h-3 bg-indigo-500 rounded-full" /> Net Trend</div>
                         </div>
                     </CardHeader>
-                    <CardContent className="h-[400px]">
+                    <CardContent className="h-[280px] min-w-0 p-2 sm:h-[400px] sm:p-6">
                         <ResponsiveContainer width="100%" height="100%">
                             <ComposedChart data={timeSeriesData}>
                                 <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} />
@@ -1505,9 +1555,9 @@ export function AnalysisCharts({ transactions, categories, properties, projects,
                 </Card>
 
                 {/* Category Breakdown */}
-                <Card className="shadow-lg border-0 animate-slide-up">
+                <Card className="min-w-0 animate-slide-up border-0 shadow-lg">
                     <CardHeader><CardTitle className="text-sm font-medium text-slate-500 uppercase">Expense Breakdown</CardTitle></CardHeader>
-                    <CardContent className="h-[350px]">
+                    <CardContent className="h-[280px] min-w-0 p-2 sm:h-[350px] sm:p-6">
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie data={categoryData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value">

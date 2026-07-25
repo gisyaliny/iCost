@@ -121,7 +121,7 @@
   }
 
   body {
-    @apply bg-slate-50 text-foreground antialiased;
+    @apply overflow-x-hidden bg-slate-50 text-foreground antialiased;
   }
 }
 

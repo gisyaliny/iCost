@@ -32,10 +32,10 @@ export default async function AnalysisPage() {
   const userSettings = userSettingsRow ? settingsView(userSettingsRow) : null
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-20 mt-8 px-4">
+    <div className="mx-auto mt-3 max-w-7xl space-y-4 px-3 pb-28 sm:mt-8 sm:space-y-8 sm:px-4 sm:pb-20">
       <div>
-           <h1 className="text-4xl font-extrabold tracking-tight text-slate-900">Analysis & Statistics</h1>
-           <p className="text-slate-500 mt-1">Visualize your expenses and income trends.</p>
+           <h1 className="text-2xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Analysis & Statistics</h1>
+           <p className="mt-0.5 text-sm text-slate-500 sm:mt-1 sm:text-base">Visualize your expenses and income trends.</p>
       </div>
       
       <AnalysisCharts transactions={transactions} categories={categories} properties={properties} projects={projects} settings={userSettings} />

@@ -16,5 +16,5 @@ export default async function RulesPage() {
     prisma.category.findMany({ where: { isArchived: false }, orderBy: [{ type: "asc" }, { name: "asc" }] }),
   ])
   const rulesVersion = rules.map(rule => `${rule.id}:${rule.priority}:${rule.isEnabled}:${rule.matchType}:${rule.pattern}:${rule.categoryId}`).join("|")
-  return <div className="mx-auto mt-8 max-w-7xl px-4 pb-24"><CategoryRulesModule key={rulesVersion} initialRules={rules} categories={categories} /></div>
+  return <div className="mx-auto mt-3 max-w-7xl px-3 pb-28 sm:mt-8 sm:px-4 sm:pb-24"><CategoryRulesModule key={rulesVersion} initialRules={rules} categories={categories} /></div>
 }
