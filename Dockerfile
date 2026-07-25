@@ -65,10 +65,11 @@ COPY --from=builder --chown=nextjs:nodejs /app/docker-bootstrap.sh ./docker-boot
 COPY --from=builder --chown=nextjs:nodejs /app/scripts ./scripts
 
 # Copy Prisma schema and engines for runtime DB initialization
-COPY --from=builder /app/prisma ./prisma
-COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
-COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules/bcryptjs ./node_modules/bcryptjs
 
 # Fix for Prisma binary targets in standard Node images
 ENV PRISMA_CLI_BINARY_TARGETS=debian-openssl-3.0.x

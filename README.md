@@ -65,61 +65,371 @@ iCost is a powerful, self-hosted family expense tracking application designed fo
 
 ---
 
-## 🟢 UGREEN NAS / UGOS Pro Deployment
+## 🟢 UGREEN DH4300 / UGOS Pro Deployment
 
-UGREEN models with Docker support can run iCost as a Compose project. The SSH workflow is recommended because this repository builds a local image instead of relying on a possibly stale registry image.
+The following procedure is the same SSH and Docker Compose workflow used for the
+working DH4300 Plus deployment. It has been verified on the NAS's native
+`aarch64`/ARM64 Docker environment with iCost exposed on host port `3001`.
 
-1. Install **Docker** from the UGOS Pro App Center and enable SSH under **Control Panel → Terminal**.
-2. Connect over SSH and prepare local, persistent folders (adjust `/volume1` if your storage volume uses a different path):
+The examples deliberately use placeholders. Never commit the NAS password,
+`NEXTAUTH_SECRET`, or the production `.env` file.
 
-   ```bash
-   sudo mkdir -p /volume1/docker/icost/database /volume1/docker/icost/imports
-   cd /volume1/docker/icost
-   git clone https://github.com/gisyaliny/iCost.git app
-   cd app
-   cp .env.nas.example .env
-   ```
+### 1. Deployment layout
 
-3. Generate a session secret with `openssl rand -base64 48`, then edit `.env`:
+The final NAS layout is:
 
-   ```env
-   NEXTAUTH_SECRET="paste-the-generated-value-here"
-   NEXTAUTH_URL="http://your-ugreen-tailscale-name:3000"
-   ICOST_PORT="3000"
-   ICOST_DATABASE_DIR="/volume1/docker/icost/database"
-   ICOST_IMPORT_DIR="/volume1/docker/icost/imports"
-   TZ="America/New_York"
-   ```
+```text
+/volume1/docker/icost/
+├── app/                       # Application source, Dockerfile and Compose file
+├── database/
+│   ├── db.sqlite              # Live persistent SQLite database
+│   └── backups/               # Automatic pre-migration backups
+└── imports/                   # CSV, OFX and QFX inbox
+```
 
-4. The app container runs as UID `1001`. Give it access to the database folder; the imports folder only needs to be readable:
+The corresponding container mounts are:
 
-   ```bash
-   sudo chown -R 1001:1001 /volume1/docker/icost/database
-   sudo chmod -R u+rwX,go-rwx /volume1/docker/icost/database
-   sudo chmod -R a+rX /volume1/docker/icost/imports
-   ```
+| NAS path | Container path | Purpose |
+| :--- | :--- | :--- |
+| `/volume1/docker/icost/database` | `/app/database` | SQLite and native backups |
+| `/volume1/docker/icost/imports` | `/app/imports` | NAS statement inbox |
 
-5. Build, start, and verify:
+If the Docker share is mapped to `U:\` on Windows, remember that `U:\` is only
+the SMB/Windows view. SSH commands must use the NAS Linux path, normally
+`/volume1/docker`.
 
-   ```bash
-   docker compose up -d --build
-   docker compose ps
-   docker compose logs --tail=100 icost
-   ```
+### 2. NAS prerequisites
 
-Open `NEXTAUTH_URL`, register your account, then put bank statements in the host imports folder when needed. Startup automatically backs up SQLite before applying migrations; backups persist under the database volume.
+1. Install **Docker** from the UGOS Pro App Center.
+2. Enable SSH in **Control Panel → Terminal**.
+3. Connect the PC and NAS to the same Tailscale network. Router port forwarding
+   is not needed.
+4. Confirm SSH, CPU architecture, Compose, and the storage path:
 
-To upgrade later:
+```bash
+ssh -p 22 <NAS_USER>@<NAS_TAILSCALE_IP>
+uname -m
+sudo docker compose version
+ls -ld /volume1/docker
+```
+
+Expected architecture output is `aarch64`. On UGOS, a normal account may need
+`sudo` for every Docker command because it cannot access the Docker socket
+directly.
+
+Create the persistent directories:
+
+```bash
+sudo mkdir -p \
+  /volume1/docker/icost/app \
+  /volume1/docker/icost/database \
+  /volume1/docker/icost/imports
+sudo chown -R "$USER":admin /volume1/docker/icost
+```
+
+### 3. Transfer the application
+
+#### Option A: clone from GitHub
+
+Use this when the NAS can access GitHub and the desired changes have already
+been pushed:
+
+```bash
+cd /volume1/docker/icost
+git clone https://github.com/gisyaliny/iCost.git app
+```
+
+#### Option B: transfer the current local working copy
+
+This is the method used for the verified deployment because it also includes
+local changes that have not been pushed. From PowerShell in the repository
+root, create a clean source archive:
+
+```powershell
+$archive = Join-Path $env:TEMP "icost-app.tgz"
+tar `
+  --exclude=.git `
+  --exclude=.next `
+  --exclude=node_modules `
+  --exclude=.env `
+  --exclude=prisma/dev.db `
+  --exclude=prisma/dev.db-wal `
+  --exclude=prisma/dev.db-shm `
+  --exclude=prisma/backups `
+  --exclude=database `
+  --exclude=imports `
+  -czf $archive .
+```
+
+Upload to the SSH user's home folder, then extract it into the Docker share:
+
+```powershell
+scp -P 22 $archive <NAS_USER>@<NAS_TAILSCALE_IP>:~/
+ssh -p 22 <NAS_USER>@<NAS_TAILSCALE_IP>
+```
+
+```bash
+tar -xzf ~/icost-app.tgz -C /volume1/docker/icost/app
+rm -f ~/icost-app.tgz
+```
+
+UGOS may reject SCP/SFTP writes directly to an absolute `/volume1/...` path
+even when the user can write there from an SSH shell. Uploading to `~/` first
+and then moving or extracting the file avoids that restriction.
+
+### 4. Migrate an existing local SQLite database
+
+Skip this step for a completely new installation.
+
+First stop the local development server so SQLite is not being written while it
+is copied. Confirm that `prisma/dev.db-wal` and `prisma/dev.db-shm` are absent.
+If they exist, shut down the process cleanly before continuing.
+
+Create and compare checksums on Windows:
+
+```powershell
+Copy-Item .\prisma\dev.db .\icost-db.sqlite
+Get-FileHash .\icost-db.sqlite -Algorithm SHA256
+scp -P 22 .\icost-db.sqlite <NAS_USER>@<NAS_TAILSCALE_IP>:~/
+```
+
+Move the database into persistent storage on the NAS:
+
+```bash
+cp ~/icost-db.sqlite /volume1/docker/icost/database/db.sqlite
+sha256sum /volume1/docker/icost/database/db.sqlite
+rm -f ~/icost-db.sqlite
+```
+
+The Windows and NAS SHA-256 values must match. Do not start the container if
+they differ.
+
+On startup, iCost:
+
+1. creates a timestamped native SQLite backup;
+2. recognizes and baselines databases created before versioned migrations;
+3. runs `prisma migrate deploy`;
+4. initializes missing default data without replacing existing users or
+   transactions.
+
+### 5. Create the production environment
+
+On the NAS:
 
 ```bash
 cd /volume1/docker/icost/app
-docker compose stop icost
-git pull --ff-only
-docker compose up -d --build
-docker compose ps
+cp .env.nas.example .env
+openssl rand -base64 48
 ```
 
-Keep iCost and the NAS management interface private behind Tailscale; router port forwarding is not required.
+Copy the generated value into `.env`, and configure the Tailscale address and
+host paths:
+
+```env
+NEXTAUTH_SECRET="paste-a-new-random-value-here"
+NEXTAUTH_URL="http://<NAS_TAILSCALE_IP>:3001"
+ICOST_PORT="3001"
+ICOST_DATABASE_DIR="/volume1/docker/icost/database"
+ICOST_IMPORT_DIR="/volume1/docker/icost/imports"
+RECURRING_POLL_INTERVAL_MS="60000"
+TZ="America/New_York"
+```
+
+Protect the file:
+
+```bash
+chmod 600 /volume1/docker/icost/app/.env
+```
+
+`NEXTAUTH_URL` must match the URL normally used in the browser. A Tailscale
+MagicDNS hostname can be used instead of the IP if it is enabled and stable.
+Changing `NEXTAUTH_SECRET` later invalidates existing login sessions.
+
+### 6. Set container permissions
+
+The production image runs as the unprivileged `nextjs` user with UID/GID
+`1001`. The database directory must be writable by that identity:
+
+```bash
+sudo chown -R 1001:1001 /volume1/docker/icost/database
+sudo chmod -R u+rwX,go-rwx /volume1/docker/icost/database
+sudo chmod -R a+rX /volume1/docker/icost/imports
+```
+
+If the NAS inbox should move or rename imported files in a future release,
+assign UID 1001 write access to `imports` as well.
+
+### 7. Validate, build, and start
+
+Validate Compose without printing the resolved configuration, which contains
+the secret:
+
+```bash
+cd /volume1/docker/icost/app
+sudo docker compose config --quiet
+```
+
+Build the image natively on ARM64:
+
+```bash
+sudo docker compose build --pull
+sudo docker compose up -d
+```
+
+The first build downloads the Node Bookworm ARM64 image, installs dependencies,
+generates the Prisma client, and runs a production Next.js build. Several
+minutes on the first run is normal. Subsequent builds reuse Docker layers.
+
+### 8. Verify the deployment
+
+Check container and health status:
+
+```bash
+sudo docker compose ps
+sudo docker inspect icost-app \
+  --format 'status={{.State.Status}} health={{.State.Health.Status}} restarts={{.RestartCount}}'
+```
+
+Expected result:
+
+```text
+status=running health=healthy restarts=0
+```
+
+Inspect startup logs:
+
+```bash
+sudo docker compose logs --tail=150 icost
+```
+
+Healthy logs include:
+
+```text
+Database migrations applied successfully.
+Default data is ready.
+Recurring worker checking every 60 seconds.
+Ready
+```
+
+Test from the NAS:
+
+```bash
+curl -fsS -o /dev/null -w 'HTTP %{http_code}\n' \
+  http://127.0.0.1:3001/login
+```
+
+Then test from a Tailscale-connected computer:
+
+```powershell
+Invoke-WebRequest `
+  -UseBasicParsing `
+  -Uri "http://<NAS_TAILSCALE_IP>:3001/login"
+```
+
+Open `http://<NAS_TAILSCALE_IP>:3001` in the browser. When an existing database
+was copied, use its existing iCost account. A default admin is created only
+when the database contains no users.
+
+### 9. Routine updates
+
+Before updating, ensure a recent file exists under
+`/volume1/docker/icost/database/backups`. Then:
+
+```bash
+cd /volume1/docker/icost/app
+sudo docker compose stop icost
+git pull --ff-only                 # omit when deploying a local archive
+sudo docker compose build --pull
+sudo docker compose up -d --force-recreate
+sudo docker compose ps
+sudo docker compose logs --tail=100 icost
+```
+
+For an archive-based update, replace only the source under `app`. Never replace
+the persistent `database` or `imports` directories. Keep the existing `.env`
+unless a new required variable was added.
+
+### 10. Backup and restore
+
+Each container startup creates a pre-migration SQLite backup under:
+
+```text
+/volume1/docker/icost/database/backups/
+```
+
+The newest 14 automatic backups are retained. For an additional NAS-level
+backup, stop the service or use SQLite's online backup command:
+
+```bash
+sudo sqlite3 /volume1/docker/icost/database/db.sqlite \
+  ".backup '/volume1/docker/icost/database/manual-backup.db'"
+```
+
+To restore:
+
+```bash
+cd /volume1/docker/icost/app
+sudo docker compose stop icost
+cd /volume1/docker/icost/database
+sudo cp db.sqlite db.sqlite.before-restore
+sudo cp backups/icost-YYYY-MM-DDTHH-MM-SS-sssZ.db db.sqlite
+sudo rm -f db.sqlite-wal db.sqlite-shm
+sudo chown 1001:1001 db.sqlite
+cd /volume1/docker/icost/app
+sudo docker compose up -d icost
+sudo docker compose ps
+```
+
+Do not delete `db.sqlite.before-restore` until the restored application and
+record counts have been verified.
+
+### 11. UGREEN-specific troubleshooting
+
+#### Port 3001 is already in use
+
+```bash
+sudo docker ps --format 'table {{.Names}}\t{{.Ports}}'
+sudo ss -lntp | grep ':3001'
+```
+
+Stop the conflicting service or change `ICOST_PORT` in `.env`, then update
+`NEXTAUTH_URL` to the same port and recreate the container.
+
+#### Container repeatedly restarts
+
+```bash
+sudo docker compose ps
+sudo docker compose logs --tail=200 icost
+```
+
+Common causes:
+
+- `EACCES` under `/app/database`: apply the UID 1001 ownership commands from
+  step 6.
+- Prisma schema or runtime module errors: rebuild from the current Dockerfile
+  with `sudo docker compose build --no-cache`.
+- invalid `NEXTAUTH_SECRET`/`NEXTAUTH_URL`: correct `.env` and recreate the
+  container.
+- corrupt or incomplete SQLite copy: stop the container and restore a verified
+  native backup.
+
+#### Tailscale works but the browser cannot connect
+
+Verify the service locally with `curl http://127.0.0.1:3001/login`, then check
+the NAS firewall. Compose currently publishes `3001` on all NAS interfaces, so
+the app may also be reachable from the LAN unless the UGOS firewall restricts
+it. No router port-forwarding rule is required or recommended.
+
+#### Useful maintenance commands
+
+```bash
+cd /volume1/docker/icost/app
+sudo docker compose ps
+sudo docker compose logs -f icost
+sudo docker compose restart icost
+sudo docker compose stop icost
+sudo docker compose up -d icost
+```
 
 ## 🚀 Comprehensive Installation on CasaOS
 
