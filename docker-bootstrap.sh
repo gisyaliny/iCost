@@ -15,6 +15,19 @@ if [ ! -d "$DB_DIR" ]; then
     mkdir -p "$DB_DIR"
 fi
 
+# UGOS may preserve the volume owner while removing its write bits after a
+# shared-folder permission change or reboot. The container user still owns
+# these paths, so restore owner-only access before SQLite or backups need it.
+echo "🔐 Ensuring database owner permissions..."
+find "$DB_DIR" -type d -exec chmod u+rwx,go-rwx {} + || {
+    echo "❌ Unable to restore database directory permissions."
+    exit 1
+}
+find "$DB_DIR" -type f -exec chmod u+rw,go-rwx {} + || {
+    echo "❌ Unable to restore database file permissions."
+    exit 1
+}
+
 # 3. Locate Prisma CLI
 # Since we are in a slim environment, .bin symlinks might strictly not exist.
 # We look for the package directly.
